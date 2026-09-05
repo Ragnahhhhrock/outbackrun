@@ -1732,6 +1732,9 @@ let horizonX = 0;
 
 function render(){
   const r = ROUTES[route];
+  // full canvas clear first — prevents any stale-pixel flicker between frames
+  ctx.fillStyle = '#0d0700';
+  ctx.fillRect(0, 0, W, H);
   // time-of-day advances with run progress; rebuild the sky/fog tables only
   // when the quantized step actually changes
   dayF = computeDayF();
@@ -1796,14 +1799,11 @@ function render(){
     }
     drawPoly(0, y1, W, y1, W, y2, 0, y2, grass);
     drawPoly(l1, y1, l2, y2, ra2, y2, ra1, y1, road);
-    drawPoly(l1, y1, l2, y2, l2-rb2, y2, l1-rb1, y1, rumble);
-    drawPoly(ra1, y1, ra2, y2, ra2+rb2, y2, ra1+rb1, y1, rumble);
     maxy = seg.p1.scr.y;
   }
   horizonX = horizonX * 0.9 + curveOffset * 0.1;
 
-  // lane markings: draw as continuous stroke paths so they flow smoothly
-  // through curves instead of breaking into angled quads per segment
+  // stroke helper: draws a continuous path through points with round caps
   function strokePath(pts, col, widthMul){
     if(pts.length < 2) return;
     ctx.lineCap = 'round';
@@ -1819,10 +1819,11 @@ function render(){
     }
   }
 
-  // centre line: yellow on even parity segments, black on odd — but each
-  // colour is stroked as its own continuous path so the line never breaks
+  // collect all road-edge points for continuous stroking of rumble + lane lines
   const centreYellow = [], centreBlack = [];
   const leftLane = [], rightLane = [];
+  const leftRumbleRed = [], leftRumbleWhite = [];
+  const rightRumbleRed = [], rightRumbleWhite = [];
 
   for(let n = 0; n < DRAW_DIST/SEG_LEN; n++){
     const seg = segments[(baseSeg.index + n) % segments.length];
@@ -1830,22 +1831,40 @@ function render(){
     const x1 = seg.p1.scr.x, y1 = seg.p1.scr.y, w1 = seg.p1.scr.w;
     const x2 = seg.p2.scr.x, y2 = seg.p2.scr.y, w2 = seg.p2.scr.w;
     if(seg.p2.scr.y >= seg.p1.scr.y) continue;
-    // near-edge lane positions (back-to-front order, so p1 is closer)
+    const r1 = w1/2, r2 = w2/2;
+    const rb1 = Math.max(2, w1*0.03), rb2 = Math.max(2, w2*0.03);
+    // centre line
     const pt = {x: x1, y: y1, w: w1};
     if(seg.color === 0) centreYellow.push(pt); else centreBlack.push(pt);
+    // lane dividers
     leftLane.push({x: x1 - 0.34*w1, y: y1, w: w1});
     rightLane.push({x: x1 + 0.34*w1, y: y1, w: w1});
-    // also include far-edge of the last segment so the path reaches the horizon
+    // rumble strips: stroke the outer edge of each strip so it reads as one
+    // continuous line even through curves.  colour alternates per segment.
+    const rumbleArrL = seg.color === 0 ? leftRumbleRed : leftRumbleWhite;
+    const rumbleArrR = seg.color === 0 ? rightRumbleRed : rightRumbleWhite;
+    rumbleArrL.push({x: x1 - r1 - rb1*0.5, y: y1, w: w1});
+    rumbleArrR.push({x: x1 + r1 + rb1*0.5, y: y1, w: w1});
+    // far-edge of last segment so paths reach the horizon
     if(n === Math.floor(DRAW_DIST/SEG_LEN) - 1){
       const lastPt = {x: x2, y: y2, w: w2};
       if(seg.color === 0) centreYellow.push(lastPt); else centreBlack.push(lastPt);
       leftLane.push({x: x2 - 0.34*w2, y: y2, w: w2});
       rightLane.push({x: x2 + 0.34*w2, y: y2, w: w2});
+      rumbleArrL.push({x: x2 - r2 - rb2*0.5, y: y2, w: w2});
+      rumbleArrR.push({x: x2 + r2 + rb2*0.5, y: y2, w: w2});
     }
   }
 
+  // rumble strips: thick continuous strokes, red/white alternating
+  strokePath(leftRumbleRed,   '#ff0000', 0.032);
+  strokePath(leftRumbleWhite, '#ffffff', 0.032);
+  strokePath(rightRumbleRed,  '#ff0000', 0.032);
+  strokePath(rightRumbleWhite,'#ffffff', 0.032);
+  // lane dividers
   strokePath(leftLane,  '#e8e8e8', 0.010);
   strokePath(rightLane, '#e8e8e8', 0.010);
+  // centre line
   strokePath(centreYellow, '#ffcc00', 0.014);
   strokePath(centreBlack,   '#111111', 0.014);
 
