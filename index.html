@@ -3,7 +3,27 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>OUTBACK RUN</title>
+<title>OUTBACK RUN — The Nullarbor Plain</title>
+<meta name="description" content="Drive the Nullarbor Plain in this Out Run-style arcade racer. Perth to the East Coast. 5 legs, 15 stages, 5 endings.">
+<meta name="keywords" content="Outback Run, Nullarbor, racing game, arcade, Australia, road trip, Out Run, browser game">
+<meta name="author" content="Ragnahhhhrock">
+<meta name="theme-color" content="#1a0f00">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Outback Run">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://outbackrun.com/">
+<meta property="og:title" content="OUTBACK RUN — The Nullarbor Plain">
+<meta property="og:description" content="Drive the Nullarbor Plain in this Out Run-style arcade racer. Perth to the East Coast. 5 legs, 15 stages, 5 endings.">
+<meta property="og:image" content="https://outbackrun.com/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:site_name" content="Outback Run">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:url" content="https://outbackrun.com/">
+<meta name="twitter:title" content="OUTBACK RUN — The Nullarbor Plain">
+<meta name="twitter:description" content="Drive the Nullarbor Plain in this Out Run-style arcade racer. Perth to the East Coast. 5 legs, 15 stages, 5 endings.">
+<meta name="twitter:image" content="https://outbackrun.com/twitter-card.png">
 <link rel="icon" href="data:,">
 <style>
 *{margin:0;padding:0;box-sizing:border-box;touch-action:none;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;}
@@ -1443,7 +1463,7 @@ function addScenery(){
   for(let i=35;i<segments.length-35;i+=Math.floor((Math.random()*40+30)*densT)){
     const side = Math.random()>0.5?1:-1;
     segments[i].sprites.push({type:'car_traffic',offset:side*0.6,speed:60+Math.random()*55,
-      pal:Math.floor(Math.random()*UTE_PALS.length), z:i*SEG_LEN});
+      carIdx:Math.floor(Math.random()*CAR_CATALOG.length), z:i*SEG_LEN});
   }
   // live hazards. Kangaroos bound across the road (their x sweeps shoulder to
   // shoulder); road trains crawl along one lane and are several trailers long.
