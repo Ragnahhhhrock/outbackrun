@@ -1657,7 +1657,7 @@ function drawSprite(sp, scale, dx, dy, seg){
     // like the arcade's hardware sprite scaler, so closing speed reads
     const tw = sh.baseW * scale;
     const f = pickFrame(sh, tw);
-    const w = Math.min(tw, 420), h = Math.min(tw * sh.baseH / sh.baseW, 420);
+    const w = Math.min(tw, 120), h = Math.min(tw * sh.baseH / sh.baseW, 120);
     const x = dx - w/2, y = dy - h;
     if(y+h < 0 || y > H + 200 || x+w < 0 || x > W) return;
     if(y + 2 < H) drawShadow(dx, y + h - 1, w * 0.9);
@@ -1678,7 +1678,7 @@ function drawSprite(sp, scale, dx, dy, seg){
   // same continuous scaling for roadside art: nearest art rung, exact size
   const tw = sh.baseW * scale;
   const f = pickFrame(sh, tw);
-  const w = Math.min(tw, 420), h = Math.min(tw * sh.baseH / sh.baseW, 420);
+  const w = Math.min(tw, 120), h = Math.min(tw * sh.baseH / sh.baseW, 120);
   const x = dx - w/2, y = dy - h;
   if(y+h < 0 || y > H + 200) return;
   if(Array.isArray(entry) && y + 2 < H) drawShadow(dx, y + h - 1, w * 0.8, 0.22);
@@ -1976,14 +1976,14 @@ function render(){
   for(const hz of hazards){
     if(hz.kind === 'roo'){
       const n = Math.floor((hz.z - player.z) / SEG_LEN);
-      if(n >= 5 && n < DRAW_N){
+      if(n >= 1 && n < DRAW_N){
         const idx = (baseSeg.index + n) % segments.length;
         (hzBySeg[idx] || (hzBySeg[idx] = [])).push(hz);
       }
     } else {
       for(let u = 0; u <= hz.units; u++){
         const n = Math.floor((hz.z + u * SEG_LEN * TRAIN_GAP - player.z) / SEG_LEN);
-        if(n >= 5 && n < DRAW_N){
+        if(n >= 1 && n < DRAW_N){
           const idx = (baseSeg.index + n) % segments.length;
           (hzBySeg[idx] || (hzBySeg[idx] = [])).push({ kind:'unit', cab:u === hz.units, x:hz.x, tt:(hz.types && hz.types[u]) || 'box' });
         }
@@ -1995,18 +1995,18 @@ function render(){
     for(const sp of segments[i].sprites){
       if(sp.type !== 'car_traffic') continue;
       const n = Math.floor((sp.z - player.z) / SEG_LEN);
-      if(n >= 5 && n < DRAW_N){
+      if(n >= 1 && n < DRAW_N){
         const idx = (baseSeg.index + n) % segments.length;
         (trBySeg[idx] || (trBySeg[idx] = [])).push(sp);
       }
     }
   }
 
-  for(let n=Math.floor(DRAW_DIST/SEG_LEN)-1; n>=5; n--){
+  for(let n=Math.floor(DRAW_DIST/SEG_LEN)-1; n>=0; n--){
     const seg = segments[(baseSeg.index + n) % segments.length];
-    if(seg.p1.cam.z <= 50) continue;
+    if(seg.p1.cam.z <= 0) continue;
     const sScale = seg.p1.scr.scale;
-    if(!isFinite(sScale) || sScale <= 0 || sScale * 4500 > 4) continue;
+    if(!isFinite(sScale) || sScale <= 0) continue;
     for(let i=0; i<seg.sprites.length; i++){
       const sp = seg.sprites[i];
       if(sp.type === 'car_traffic') continue;   // drawn from trBySeg below
@@ -2017,7 +2017,7 @@ function render(){
         continue;
       }
       const scale = sScale * 4500;
-      drawSprite(sp, scale, spX, spY, seg);
+      if(scale < 3.5) drawSprite(sp, scale, spX, spY, seg);
     }
     // moving traffic cars, rendered from their current segment
     const tl = trBySeg[seg.index];
@@ -2026,7 +2026,7 @@ function render(){
         const spX = seg.p1.scr.x + sp.offset * seg.p1.scr.w / 2;
         const spY = seg.p1.scr.y;
         const scale = sScale * 6000;
-        drawSprite(sp, scale, spX, spY, seg);
+        if(scale < 3.5) drawSprite(sp, scale, spX, spY, seg);
       }
     }
     const hl = hzBySeg[seg.index];
@@ -2052,7 +2052,7 @@ function render(){
           const sh = (hz.cab ? SHEETS.cabV : SHEETS['trailerV_' + hz.tt])[vehVariant(seg, baseSeg) * 2 + animF];
           const twT = sh.baseW * seg.p1.scr.scale * 4200;
           const f = pickFrame(sh, twT);
-          const w = Math.min(twT, 280), h = Math.min(twT * sh.baseH / sh.baseW, 280);
+          const w = Math.min(twT, 120), h = Math.min(twT * sh.baseH / sh.baseW, 120);
           drawShadow(hx, hy - 1, w * 0.95);
           ctx.drawImage(sh.canvas, f.x, 0, f.w, f.h, hx - w/2, hy - h, w, h);
           tailGlow(hx - w/2, hy - h, w, h);
