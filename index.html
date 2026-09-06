@@ -1976,14 +1976,14 @@ function render(){
   for(const hz of hazards){
     if(hz.kind === 'roo'){
       const n = Math.floor((hz.z - player.z) / SEG_LEN);
-      if(n >= 2 && n < DRAW_N){
+      if(n >= 5 && n < DRAW_N){
         const idx = (baseSeg.index + n) % segments.length;
         (hzBySeg[idx] || (hzBySeg[idx] = [])).push(hz);
       }
     } else {
       for(let u = 0; u <= hz.units; u++){
         const n = Math.floor((hz.z + u * SEG_LEN * TRAIN_GAP - player.z) / SEG_LEN);
-        if(n >= 2 && n < DRAW_N){
+        if(n >= 5 && n < DRAW_N){
           const idx = (baseSeg.index + n) % segments.length;
           (hzBySeg[idx] || (hzBySeg[idx] = [])).push({ kind:'unit', cab:u === hz.units, x:hz.x, tt:(hz.types && hz.types[u]) || 'box' });
         }
@@ -1995,18 +1995,18 @@ function render(){
     for(const sp of segments[i].sprites){
       if(sp.type !== 'car_traffic') continue;
       const n = Math.floor((sp.z - player.z) / SEG_LEN);
-      if(n >= 2 && n < DRAW_N){
+      if(n >= 5 && n < DRAW_N){
         const idx = (baseSeg.index + n) % segments.length;
         (trBySeg[idx] || (trBySeg[idx] = [])).push(sp);
       }
     }
   }
 
-  for(let n=Math.floor(DRAW_DIST/SEG_LEN)-1; n>=2; n--){
+  for(let n=Math.floor(DRAW_DIST/SEG_LEN)-1; n>=5; n--){
     const seg = segments[(baseSeg.index + n) % segments.length];
-    if(seg.p1.cam.z <= 5) continue;
+    if(seg.p1.cam.z <= 50) continue;
     const sScale = seg.p1.scr.scale;
-    if(!isFinite(sScale) || sScale <= 0) continue;
+    if(!isFinite(sScale) || sScale <= 0 || sScale * 4500 > 4) continue;
     for(let i=0; i<seg.sprites.length; i++){
       const sp = seg.sprites[i];
       if(sp.type === 'car_traffic') continue;   // drawn from trBySeg below
