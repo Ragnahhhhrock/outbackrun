@@ -1976,14 +1976,14 @@ function render(){
   for(const hz of hazards){
     if(hz.kind === 'roo'){
       const n = Math.floor((hz.z - player.z) / SEG_LEN);
-      if(n >= 1 && n < DRAW_N){
+      if(n >= 2 && n < DRAW_N){
         const idx = (baseSeg.index + n) % segments.length;
         (hzBySeg[idx] || (hzBySeg[idx] = [])).push(hz);
       }
     } else {
       for(let u = 0; u <= hz.units; u++){
         const n = Math.floor((hz.z + u * SEG_LEN * TRAIN_GAP - player.z) / SEG_LEN);
-        if(n >= 1 && n < DRAW_N){
+        if(n >= 2 && n < DRAW_N){
           const idx = (baseSeg.index + n) % segments.length;
           (hzBySeg[idx] || (hzBySeg[idx] = [])).push({ kind:'unit', cab:u === hz.units, x:hz.x, tt:(hz.types && hz.types[u]) || 'box' });
         }
@@ -1995,16 +1995,16 @@ function render(){
     for(const sp of segments[i].sprites){
       if(sp.type !== 'car_traffic') continue;
       const n = Math.floor((sp.z - player.z) / SEG_LEN);
-      if(n >= 1 && n < DRAW_N){
+      if(n >= 2 && n < DRAW_N){
         const idx = (baseSeg.index + n) % segments.length;
         (trBySeg[idx] || (trBySeg[idx] = [])).push(sp);
       }
     }
   }
 
-  for(let n=Math.floor(DRAW_DIST/SEG_LEN)-1; n>=0; n--){
+  for(let n=Math.floor(DRAW_DIST/SEG_LEN)-1; n>=2; n--){
     const seg = segments[(baseSeg.index + n) % segments.length];
-    if(seg.p1.cam.z <= 0) continue;
+    if(seg.p1.cam.z <= 5) continue;
     const sScale = seg.p1.scr.scale;
     if(!isFinite(sScale) || sScale <= 0) continue;
     for(let i=0; i<seg.sprites.length; i++){
@@ -3061,7 +3061,7 @@ function auLoseSting(){
 // eighth-note bass, palm-muted chug in the verses, open AC/DC-style stabs
 // in the chorus, didgeridoo under the verses and bridge, kookaburra
 // answering the flute, and a bouncy offbeat flute lead on top.
-const MUS = { on:true, step:0, nextT:0, sp16:60 / 138 / 4, delay:null };
+const MUS = { on:false, step:0, nextT:0, sp16:60 / 138 / 4, delay:null };
 const CHORD_SEQ = [40,40,43,45,40,43,45,43, 40,40,43,43,45,45,43,50,
                    48,50,40,45,48,50,40,45, 40,43,45,40,48,50,40,40];
 const FLUTE_PHRASE = [
