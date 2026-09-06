@@ -2017,7 +2017,7 @@ function render(){
         continue;
       }
       const scale = sScale * 4500;
-      if(scale < 3.5) drawSprite(sp, scale, spX, spY, seg);
+      drawSprite(sp, scale, spX, spY, seg);
     }
     // moving traffic cars, rendered from their current segment
     const tl = trBySeg[seg.index];
@@ -2026,7 +2026,7 @@ function render(){
         const spX = seg.p1.scr.x + sp.offset * seg.p1.scr.w / 2;
         const spY = seg.p1.scr.y;
         const scale = sScale * 6000;
-        if(scale < 3.5) drawSprite(sp, scale, spX, spY, seg);
+        drawSprite(sp, scale, spX, spY, seg);
       }
     }
     const hl = hzBySeg[seg.index];
