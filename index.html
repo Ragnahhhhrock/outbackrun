@@ -237,7 +237,7 @@ const LEGS = [
 ];
 
 let route = 'nullarbor';
-let hazards = [];            // live obstacles: hopping roos + crawling road trains
+let hazards = [];            // live obstacles: crawling road trains
 let smokeParts = [];         // tyre-smoke particles: {x, y, vx, vy, life, maxLife, size}
 let crashCooldown = 0;       // invulnerability window after hitting a hazard
 let crashMsg = '', crashMsgT = 0;
@@ -327,44 +327,6 @@ function pickFrame(sh, targetW){
 }
 
 // --- paint routines (shared by single assets and sheet frames) ---
-// roo poses face RIGHT (direction of travel); left-bound frames are the same
-// paintings mirrored at sheet-build time, so a roo always heads the way it hops
-function paintRooLeap(c){
-  c.fillStyle='#a0622d';
-  c.beginPath();c.moveTo(7,18);c.lineTo(0,24);c.lineTo(9,14);c.closePath();c.fill();   // tail
-  c.beginPath();c.ellipse(13,14,8,6,-0.4,0,Math.PI*2);c.fill();                        // body
-  c.fillRect(8,17,5,7);c.fillRect(5,22,9,3);                                           // hind leg + foot
-  c.fillRect(18,13,3,5);                                                               // forearm
-  c.beginPath();c.ellipse(22,8,4,3.5,0,0,Math.PI*2);c.fill();                          // head
-  c.fillRect(20,1,2,5);c.fillRect(24,2,2,4);                                           // ears
-  c.fillStyle='#c88a4a';c.beginPath();c.ellipse(15,16,4,3,-0.4,0,Math.PI*2);c.fill();  // belly
-  c.fillStyle='#000';c.fillRect(24,7,2,2);                                             // eye
-}
-// mid-hop: legs gathered under the body between full stretch and touchdown —
-// with leap and crouch this makes a 3-frame bound cycle
-function paintRooTuck(c){
-  c.fillStyle='#a0622d';
-  c.beginPath();c.moveTo(7,16);c.lineTo(0,20);c.lineTo(9,13);c.closePath();c.fill();   // tail
-  c.beginPath();c.ellipse(13,12,8,5.5,-0.2,0,Math.PI*2);c.fill();                      // body, level
-  c.fillRect(8,14,4,5);c.fillRect(13,15,4,5);                                          // legs tucked up
-  c.fillRect(7,19,10,2);                                                               // feet drawn in
-  c.fillRect(18,11,3,4);                                                               // forearm
-  c.beginPath();c.ellipse(22,7,4,3.5,0,0,Math.PI*2);c.fill();                          // head
-  c.fillRect(20,0,2,5);c.fillRect(24,1,2,4);                                           // ears
-  c.fillStyle='#c88a4a';c.beginPath();c.ellipse(15,14,4,2.5,-0.2,0,Math.PI*2);c.fill();// belly
-  c.fillStyle='#000';c.fillRect(24,6,2,2);                                             // eye
-}
-function paintRooCrouch(c){
-  c.fillStyle='#a0622d';
-  c.beginPath();c.moveTo(6,18);c.lineTo(0,24);c.lineTo(8,15);c.closePath();c.fill();   // tail
-  c.beginPath();c.ellipse(13,15,7,9,0,0,Math.PI*2);c.fill();                           // upright body
-  c.fillRect(6,21,15,4);                                                               // feet splayed
-  c.fillRect(19,12,3,5);                                                               // forearm
-  c.beginPath();c.ellipse(20,6,4,3.5,0,0,Math.PI*2);c.fill();                          // head up, alert
-  c.fillRect(17,0,2,5);c.fillRect(22,1,2,4);                                           // ears
-  c.fillStyle='#c88a4a';c.beginPath();c.ellipse(14,17,3.5,5,0,0,Math.PI*2);c.fill();   // chest
-  c.fillStyle='#000';c.fillRect(22,5,2,2);                                             // eye
-}
 // --- ROAD TRAIN fleet (studied from real outback consists) ----------------
 // shared rear-end furniture: tri-axle bogie with alternating wheel bump
 // (rolling), mudflaps, taillights, yellow ROAD TRAIN plate
@@ -759,13 +721,6 @@ function initAssets(){
     c.fillStyle='#6a6a6a';c.beginPath();c.moveTo(4,28);c.lineTo(8,8);c.lineTo(15,4);c.lineTo(22,10);c.lineTo(26,28);c.closePath();c.fill();
     c.fillStyle='#8a8a8a';c.beginPath();c.moveTo(8,28);c.lineTo(12,12);c.lineTo(18,8);c.lineTo(22,28);c.closePath();c.fill();
   });
-  ASSETS.sign_kangaroo = makeAsset(32,40,(c,w,h)=>{
-    c.fillStyle='#8B0000';c.fillRect(14,32,4,8);
-    c.fillStyle='#ffcc00';c.fillRect(2,2,28,28);c.fillStyle='#000';c.fillRect(4,4,24,24);
-    c.fillStyle='#ffcc00';c.beginPath();c.ellipse(16,12,4,3,0,0,Math.PI*2);c.fill();
-    c.fillRect(12,14,8,4);c.fillRect(10,18,4,6);c.fillRect(18,18,4,6);c.fillRect(8,22,4,4);c.fillRect(20,22,4,4);
-    c.fillStyle='#ffcc00';c.font='bold 8px monospace';c.fillText('ROO',6,30);
-  });
   ASSETS.sign_roadtrain = makeAsset(32,40,(c,w,h)=>{
     c.fillStyle='#8B0000';c.fillRect(14,32,4,8);
     c.fillStyle='#ffcc00';c.fillRect(2,2,28,28);c.fillStyle='#000';c.fillRect(4,4,24,24);
@@ -870,13 +825,6 @@ function initAssets(){
   // Each painter gets (c, anim); the pair of frames is built into sheets
   // after the flora ladders below.
   const FAUNA = {
-    animal_kangaroo: [28,24,(c,a)=>{                          // grazing roo, head bobs
-      const hd = a ? 3 : 0;
-      c.fillStyle='#8B4513';c.beginPath();c.ellipse(14,16,8,5,0,0,Math.PI*2);c.fill();
-      c.fillRect(8,12,4,10);c.fillRect(18,12,4,10);
-      c.fillStyle='#A0522D';c.beginPath();c.ellipse(20,10+hd,4,3,0,0,Math.PI*2);c.fill();
-      c.fillRect(22,6+hd,6,2);c.fillRect(22,10+hd,6,2);c.fillStyle='#000';c.fillRect(22,8+hd,2,2);
-    }],
     animal_emu: [24,36,(c,a)=>{                               // striding emu, legs alternate
       c.fillStyle='#4a3728';
       if(a){c.fillRect(8,20,4,16);c.fillRect(14,20,3,12);}else{c.fillRect(11,20,3,16);c.fillRect(8,24,4,12);}
@@ -965,20 +913,7 @@ function initAssets(){
   // 10 rungs from distant speck to full-screen, so every object steps up in
   // size as it approaches instead of smooth-scaling
   const HAZ_SCALES = [0.3, 0.45, 0.62, 0.82, 1, 1.25, 1.55, 1.95, 2.45, 3.1];
-  // mirror helper: roos face right in the paintings; L sheets are the same
-  // frames flipped so a left-bound roo hops nose-first
-  function flipSheet(baseW, baseH, scales, drawFrame){
-    return makeSheet(baseW, baseH, scales, c => {
-      c.translate(baseW, 0); c.scale(-1, 1); drawFrame(c);
-    });
-  }
   // 3-pose bound cycle x 2 directions
-  SHEETS.rooLeapR  = makeSheet(30, 26, HAZ_SCALES, paintRooLeap);
-  SHEETS.rooLeapL  = flipSheet(30, 26, HAZ_SCALES, paintRooLeap);
-  SHEETS.rooTuckR  = makeSheet(30, 26, HAZ_SCALES, paintRooTuck);
-  SHEETS.rooTuckL  = flipSheet(30, 26, HAZ_SCALES, paintRooTuck);
-  SHEETS.rooCrouchR= makeSheet(30, 26, HAZ_SCALES, paintRooCrouch);
-  SHEETS.rooCrouchL= flipSheet(30, 26, HAZ_SCALES, paintRooCrouch);
 
   // vehicles get a full variant grid: 3 yaw (turning L/straight/R) x
   // 3 pitch (crest/level/dip) x 2 wheel-spin frames, each as its own size
@@ -1421,34 +1356,34 @@ const ROUTE_FLORA = {
 const SCENERY_HW = {
   gumtree:0.09, tree:0.09, deadtree:0.08, desertoak:0.08, boab:0.14, palm:0.08,
   rock:0.14, termite:0.12, uluru:0.30, windmill:0.12,
-  sign_kangaroo:0.06, sign_roadtrain:0.06, sign_speed:0.06, sign_flood:0.06, lamp:0.05
+  sign_roadtrain:0.06, sign_speed:0.06, sign_flood:0.06, lamp:0.05
 };
 const SCENERY_MSG = {
   rock:'ROCK!', termite:'TERMITE MOUND!', uluru:'ROCK!', windmill:'WINDMILL!',
-  sign_kangaroo:'SIGN!', sign_roadtrain:'SIGN!', sign_speed:'SIGN!', sign_flood:'SIGN!', lamp:'LAMP POST!'
+  sign_roadtrain:'SIGN!', sign_speed:'SIGN!', sign_flood:'SIGN!', lamp:'LAMP POST!'
 };
 // and what lives along it
 const ROUTE_FAUNA = {
-  nullarbor:  ['animal_kangaroo','animal_emu','animal_dingo'],
-  redcentre:  ['animal_camel','animal_dingo','animal_kangaroo'],
-  greatdivide:['animal_wombat','animal_cow','animal_kangaroo'],
+  nullarbor:  ['animal_emu','animal_dingo'],
+  redcentre:  ['animal_camel','animal_dingo'],
+  greatdivide:['animal_wombat','animal_cow'],
   topend:     ['animal_buffalo','animal_croc','animal_emu'],
   southcoast: ['animal_sheep','animal_sheep','animal_cow','animal_emu'],
-  oceanrd:    ['animal_sheep','animal_emu','animal_kangaroo']
+  oceanrd:    ['animal_sheep','animal_emu']
 };
 
 function addScenery(){
   const r = ROUTES[route];
   const flora = ROUTE_FLORA[route] || ['tree'];
-  const fauna = ROUTE_FAUNA[route] || ['animal_kangaroo'];
+  const fauna = ROUTE_FAUNA[route] || ['animal_emu'];
   for(let i=12;i<segments.length-12;i+=Math.floor(Math.random()*4+2)){
     const side = Math.random()>0.5?1:-1;
     const off = 1.25 + Math.random()*1.1;   // half-width units: 1.0 = road edge
     let type;
     const rr = Math.random();
-    if(rr<0.07) type='sign_kangaroo';
-    else if(rr<0.13) type='sign_roadtrain';
-    else if(rr<0.18) type='sign_speed';
+    if(rr<0.07) type='sign_roadtrain';
+    else if(rr<0.13) type='sign_speed';
+    else if(rr<0.18) type='sign_flood';
     else if(rr<0.26) type=fauna[Math.floor(Math.random()*fauna.length)];
     else type=flora[Math.floor(Math.random()*flora.length)];
     segments[i].sprites.push({type,offset:side*off});
@@ -1488,16 +1423,10 @@ function addScenery(){
     segments[i].sprites.push({type:'car_traffic',offset:side*0.6,speed:60+Math.random()*55,
       carIdx:Math.floor(Math.random()*CAR_CATALOG.length), z:i*SEG_LEN});
   }
-  // live hazards. Kangaroos bound across the road (their x sweeps shoulder to
-  // shoulder); road trains crawl along one lane and are several trailers long.
-  // Both cost you heavily on contact — dodge them.
+  // live hazards: road trains crawl along one lane and are several trailers
+  // long. Contact costs you heavily — dodge them.
   hazards = [];
   const nS = segments.length;
-  const rooEvery = (r.diff === 'easy' ? 100 : r.diff === 'normal' ? 80 : 63) * densT;
-  for(let i=28;i<nS-22;i+=Math.floor(Math.random()*rooEvery+rooEvery*0.6)){
-    hazards.push({ kind:'roo', z:i*SEG_LEN, t:Math.random()*6,
-      omega:1.1+Math.random()*0.6, amp:1.15+Math.random()*0.3, x:0, hop:0 });
-  }
   const trainEvery = (r.diff === 'easy' ? 70 : r.diff === 'normal' ? 55 : 42) * densT;
   // consists match the country each leg crosses: fuel tankers on the
   // Nullarbor, grain tippers out of the Red Centre, cattle crates on the
@@ -1993,19 +1922,11 @@ function render(){
   const trBySeg = {};   // moving traffic cars, bucketed by current segment
   const DRAW_N = DRAW_DIST / SEG_LEN;
   for(const hz of hazards){
-    if(hz.kind === 'roo'){
-      const n = Math.floor((hz.z - player.z) / SEG_LEN);
+    for(let u = 0; u <= hz.units; u++){
+      const n = Math.floor((hz.z + u * SEG_LEN * TRAIN_GAP - player.z) / SEG_LEN);
       if(n >= 1 && n < DRAW_N){
         const idx = (baseSeg.index + n) % segments.length;
-        (hzBySeg[idx] || (hzBySeg[idx] = [])).push(hz);
-      }
-    } else {
-      for(let u = 0; u <= hz.units; u++){
-        const n = Math.floor((hz.z + u * SEG_LEN * TRAIN_GAP - player.z) / SEG_LEN);
-        if(n >= 1 && n < DRAW_N){
-          const idx = (baseSeg.index + n) % segments.length;
-          (hzBySeg[idx] || (hzBySeg[idx] = [])).push({ kind:'unit', cab:u === hz.units, x:hz.x, tt:(hz.types && hz.types[u]) || 'box' });
-        }
+        (hzBySeg[idx] || (hzBySeg[idx] = [])).push({ kind:'unit', cab:u === hz.units, x:hz.x, tt:(hz.types && hz.types[u]) || 'box' });
       }
     }
   }
@@ -2053,17 +1974,7 @@ function render(){
       for(const hz of hl){
         const hx = seg.p1.scr.x + hz.x * seg.p1.scr.w / 2;
         const hy = seg.p1.scr.y;
-        if(hz.kind === 'roo'){
-          // 3-pose bound cycle (crouch -> tuck -> leap) x 2 travel directions
-          const pose = hz.hop > 0.7 ? 'rooLeap' : hz.hop > 0.35 ? 'rooTuck' : 'rooCrouch';
-          const sh = SHEETS[pose + (hz.dir < 0 ? 'L' : 'R')];
-          const f = pickFrame(sh, sh.baseW * seg.p1.scr.scale * 2600);
-          const w = Math.min(f.w, 130), h = Math.min(f.h, 130);
-          const ry = hy - h - h * 0.45 * hz.hop;
-          drawShadow(hx, hy - 1, w * 0.8, 0.25);   // shadow stays grounded even mid-leap
-          ctx.drawImage(sh.canvas, f.x, 0, f.w, f.h, hx - w/2, ry, w, h);
-          if(HZDBG){ ctx.strokeStyle='#ff00ff'; ctx.lineWidth=2; ctx.strokeRect(hx-w/2, ry, w, h); }
-        } else {
+        {
           // each train unit picks its own yaw/pitch frame from its segment,
           // so a consist visibly articulates over crests and through bends;
           // the wheel-spin frame alternates with time so the consist rolls
@@ -2266,8 +2177,8 @@ function updatePhysics(dt){
 
   player.z += player.speed * dt * WORLD_SPEED;
 
-  // hazards: roos sweep across the road with a bouncing hop; road trains
-  // grind forward at a crawl. Contact = crash (heavy slowdown + smoke).
+  // hazards: road trains grind forward at a crawl.
+  // Contact = crash (heavy slowdown + smoke).
   //
   // Collision model: the hero car's contact patch sits ~3 segments of
   // visual depth up the road (worked out from the projection constants and
@@ -2279,28 +2190,14 @@ function updatePhysics(dt){
   if(crashCooldown > 0) crashCooldown -= dt;
   if(crashMsgT > 0) crashMsgT -= dt;
   for(const hz of hazards){
-    if(hz.kind === 'roo'){
-      hz.t += dt;
-      const ph = hz.t * hz.omega + 0;   // phase; amp sweeps across both shoulders
-      hz.x = hz.amp * Math.sin(ph);
-      const vel = Math.cos(ph);         // d(x)/d(ph): which way it's bounding
-      hz.hop = Math.abs(vel);           // airborne mid-crossing, grounded at the edges
-      hz.dir = vel >= 0 ? 1 : -1;       // sprite faces the direction of travel
-    } else {
-      hz.z += hz.speed * dt * WORLD_SPEED;
-    }
+    hz.z += hz.speed * dt * WORLD_SPEED;
     if(crashCooldown <= 0 && player.speed > 25){
       const dz = hz.z - player.z;
-      if(hz.kind === 'roo'){
-        if(dz > CAR_Z0 && dz < CAR_Z1 && Math.abs(player.x - hz.x) < PLAYER_HW + 0.13)
-          hitHazard('ROO!', hz.x);
-      } else {
-        // the cab leads, trailers trail behind hz.z: contact from the moment
-        // the last trailer reaches you until the cab clears your front bumper
-        const tail = hz.units * SEG_LEN * TRAIN_GAP;
-        if(dz > CAR_Z0 - tail && dz < CAR_Z1 && Math.abs(player.x - hz.x) < PLAYER_HW + 0.19)
-          hitHazard('ROAD TRAIN!', hz.x);
-      }
+      // the cab leads, trailers trail behind hz.z: contact from the moment
+      // the last trailer reaches you until the cab clears your front bumper
+      const tail = hz.units * SEG_LEN * TRAIN_GAP;
+      if(dz > CAR_Z0 - tail && dz < CAR_Z1 && Math.abs(player.x - hz.x) < PLAYER_HW + 0.19)
+        hitHazard('ROAD TRAIN!', hz.x);
     }
   }
   // traffic utes and solid roadside scenery share the same contact window.
@@ -2406,7 +2303,7 @@ function gameOver(title, text){
 // ---------- high scores ----------
 const HS_KEY = 'obr_hiscores_v1';
 const HS_DEFAULTS = [
-  {name:'ROO', score:42000, route:'Nullarbor Straight'},
+  {name:'EMU', score:42000, route:'Nullarbor Straight'},
   {name:'EMU', score:35000, route:'Red Centre Run'},
   {name:'WOM', score:29000, route:'Southern Coast'},
   {name:'DGO', score:24000, route:'Great Divide'},
@@ -2454,12 +2351,11 @@ function drawSilhouettes(){
   // fence posts
   for(let fx=180;fx<235;fx+=12) x.fillRect(fx, 84, 2, 12);
   x.fillRect(178, 87, 58, 2);
-  // a roo mid-bound
-  x.beginPath();x.ellipse(208, 76, 7, 4, -0.3, 0, Math.PI*2);x.fill();
-  x.fillRect(213, 68, 3, 8);
-  x.beginPath();x.ellipse(216, 67, 3, 2, 0, 0, Math.PI*2);x.fill();
-  x.fillRect(217, 62, 2, 5);x.fillRect(219, 63, 2, 4);
-  x.fillRect(200, 76, 8, 2);
+  // an emu striding by the fence line
+  x.beginPath();x.ellipse(208, 76, 6, 5, 0, 0, Math.PI*2);x.fill();
+  x.fillRect(212, 66, 2, 10);
+  x.beginPath();x.ellipse(213, 64, 3, 2.5, 0, 0, Math.PI*2);x.fill();
+  x.fillRect(206, 80, 2, 7);x.fillRect(210, 80, 2, 7);
 }
 
 let hsReturnTo = 'title';
@@ -3350,7 +3246,7 @@ if(location.hash.indexOf('auto') !== -1){
   let t = 0;
   // road-following test driver: centres in the lane, turns in early for
   // bends, lifts off for the hard ones, and dodges traffic, trains and
-  // roos by evaluating both corridors and committing to the wider one
+  // threats by evaluating both corridors and committing to the wider one
   // (like a player would)
   let dodgeSide = 0;
   const autoDrive = () => {
@@ -3365,10 +3261,10 @@ if(location.hash.indexOf('auto') !== -1){
         if(sp.type === 'car_traffic') threats.push({ x: sp.offset, hw: 0.5, dz: n * SEG_LEN });
       }
     }
-    for(const hz of hazards){                        // roos and road trains
+    for(const hz of hazards){                        // road trains
       const dz = hz.z - player.z;
       if(dz < 200 || dz > 1700) continue;
-      threats.push({ x: hz.x, hw: hz.kind === 'roo' ? 0.35 : 0.45, dz });
+      threats.push({ x: hz.x, hw: 0.45, dz });
     }
     // does the racing line clear every threat? if not, sweep the road for
     // the corridor that does, with a nudge to keep the side we're on
@@ -3405,8 +3301,8 @@ if(location.hash.indexOf('auto') !== -1){
     requestAnimationFrame(() => {
       player.gear = 1;
       if(location.hash.indexOf('crashtest') !== -1){
-        // park a roo dead centre just ahead: the ff drive must hit it
-        hazards.push({ kind:'roo', z:player.z + 1500, t:0, omega:0.0001, amp:0, x:0, hop:0 });
+        // park a road train dead centre just ahead: the ff drive must hit it
+        hazards.push({ kind:'train', z:player.z + 1500, x:0, speed:0, units:2, types:['box','box'] });
       }
       for(let i = 0; i < steps; i++){ autoDrive(); updatePhysics(1 / 60); }
     });
@@ -3463,16 +3359,10 @@ if(location.hash.indexOf('exportsprites') !== -1){
       {label:'CATTLE CRATE - 3 YAW x 3 PITCH x 2 SPIN', grid:gridRow(SHEETS.trailerV_crate)},
       {label:'GRAIN TIPPER - 3 YAW x 3 PITCH x 2 SPIN', grid:gridRow(SHEETS.trailerV_tipper)},
       {label:'PRIME MOVER - 3 YAW x 3 PITCH x 2 SPIN', grid:gridRow(SHEETS.cabV)},
-      {label:'ROO - LEAP RIGHT', sheet:SHEETS.rooLeapR},
-      {label:'ROO - LEAP LEFT', sheet:SHEETS.rooLeapL},
-      {label:'ROO - TUCK RIGHT', sheet:SHEETS.rooTuckR},
-      {label:'ROO - TUCK LEFT', sheet:SHEETS.rooTuckL},
-      {label:'ROO - CROUCH RIGHT', sheet:SHEETS.rooCrouchR},
-      {label:'ROO - CROUCH LEFT', sheet:SHEETS.rooCrouchL},
       {label:'FLORA BY ROUTE', grid:['tree','gumtree','deadtree','boab','saltbush','spinifex','desertoak','uluru','fern','windmill','fencepost','lamp','termite','dune','palm','rock']
         .map(k => ({c:SHEETS[k].canvas, x:SHEETS[k].frames[F1].x, w:SHEETS[k].frames[F1].w, h:SHEETS[k].frames[F1].h}))},
       {label:'FAUNA - 2-FRAME AMBLE', grid:[]
-        .concat(...['animal_kangaroo','animal_emu','animal_camel','animal_dingo','animal_cow','animal_sheep','animal_buffalo','animal_croc','animal_wombat']
+        .concat(...['animal_emu','animal_camel','animal_dingo','animal_cow','animal_sheep','animal_buffalo','animal_croc','animal_wombat']
           .map(k => SHEETS[k].map(sh => ({c:sh.canvas, x:sh.frames[F1].x, w:sh.frames[F1].w, h:sh.frames[F1].h}))))}
     ];
     const pad = 10, labelH = 14;
@@ -3516,7 +3406,6 @@ if(location.hash.indexOf('debug') !== -1){
     z: Math.round(player.z), x: +player.x.toFixed(2), speed: Math.round(player.speed), steer: +input.steerTarget.toFixed(2),
     timeLeft: Math.round(timeLeft), state: gameState, finished, score: player.score,
     hz: hazards.length, crash: +crashCooldown.toFixed(2),
-    roos: hazards.filter(h => h.kind === 'roo').length,
     trains: hazards.filter(h => h.kind === 'train').length,
     au: AU.started ? AU.ctx.state + (MUS.on ? '+mus' : '') + ' step' + MUS.step : 'off' });
 }
@@ -3533,18 +3422,14 @@ if(location.hash.indexOf('crashtest') !== -1){
   })();
 }
 
-// debug/test hook: #showhz plants a kangaroo and a road train just ahead so
-// screenshots can verify hazard rendering
+// debug/test hook: #showhz plants road trains just ahead so screenshots can
+// verify hazard rendering
 if(location.hash.indexOf('showhz') !== -1){
   requestAnimationFrame(() => requestAnimationFrame(() => {
     input.gas = 0; player.speed = 0; player.x = 0;   // hold still, centred, so the screenshot catches them
-    hazards.push({ kind:'roo', z:player.z + 620, t:0, omega:0.0001, amp:0, x:0, hop:0 });
-    // one mid-leap bounding LEFT (phase in Q3: sin<0, cos<0), one in the
-    // tuck frame heading RIGHT (phase pi/3: hop=0.5). omega is tiny so the
-    // phase — and so the pose — holds for the screenshot.
-    hazards.push({ kind:'roo', z:player.z + 1500, t:(Math.PI+0.7)*10000, omega:0.0001, amp:0.7, x:0, hop:1, dir:-1 });
-    hazards.push({ kind:'roo', z:player.z + 2300, t:(Math.PI/3)*10000, omega:0.0001, amp:0.58, x:0, hop:0.5, dir:1 });
-    hazards.push({ kind:'train', z:player.z + 3200, x:-0.35, speed:0, units:3, types:['tanker','crate','tipper'] });
+    hazards.push({ kind:'train', z:player.z + 620,  x:0.1,  speed:0, units:2, types:['tanker','box'] });
+    hazards.push({ kind:'train', z:player.z + 2600, x:-0.35, speed:0, units:3, types:['tanker','crate','tipper'] });
+    hazards.push({ kind:'train', z:player.z + 5200, x:0.3,  speed:0, units:4, types:['box','crate','tipper','tanker'] });
   }));
 }
 
