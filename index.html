@@ -1420,9 +1420,11 @@ function addScenery(){
     }
   }
   // live hazards: road trains crawl along one lane and are several trailers
-  // long. Contact costs you heavily — dodge them.
+  // long. Contact costs you heavily — dodge them. Density eases off gently
+  // over the first legs of the run.
   hazards = [];
   const nS = segments.length;
+  const densT = 1 - Math.min(leg, 4) * 0.06;
   const trainEvery = (r.diff === 'easy' ? 70 : r.diff === 'normal' ? 55 : 42) * densT;
   // consists match the country each leg crosses: fuel tankers on the
   // Nullarbor, grain tippers out of the Red Centre, cattle crates on the
