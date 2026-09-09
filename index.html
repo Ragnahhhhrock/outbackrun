@@ -247,6 +247,8 @@ let path = [];               // 'L'/'R' fork choices made so far
 let node = LEGS[0][0];       // current stage node
 let legBannerT = 0;          // seconds left to show the stage-name banner
 let finished = false;        // reached an ending node
+let timeExtFlashT = 0;       // seconds left to show TIME EXTENSION flash
+let gateCrossed = false;     // prevent double-trigger on the same gate
 let targetDest = -1;         // course-map selection: index into the final leg, -1 = no target
 let gameState = 'title';
 let timeLeft = 75;
@@ -259,7 +261,7 @@ const CAM_H = 1600;
 const FOV = 125;
 const CAM_DEPTH = 0.52;   // ~1/tan(FOV/2)
 const ROAD_W = 1500;      // world half-width of the road
-const DRAW_DIST = 12000;
+const DRAW_DIST = 20000;
 // world scroll rate: how fast the road markings and roadside objects stream
 // past per km/h of speed. Stages are stretched by the same factor so their
 // time-to-finish is unchanged — the run just reads much faster.
@@ -269,6 +271,7 @@ let trackLen = 0;         // current stage length in world units (set by createR
 const TRAIN_GAP = 1.5;    // segment spacing between road-train units
 
 const input = { gas:0, brake:0, steer:0, steerTarget:0, gear:0 };
+const trafficPassState = new Map();   // tracks dz sign per traffic car to detect overtakes
 const HZDBG = location.hash.indexOf('hzdbg') !== -1;   // test: outline hazard boxes
 
 // --- tilt drive: roll left/right to steer, tip forward (top edge away) for gas,
@@ -1544,6 +1547,8 @@ function resetGame(){
   leg = 0; pos = 0; path = []; finished = false;
   node = LEGS[0][0]; route = node.env; stage = 0;
   legBannerT = 2.5;
+  gateCrossed = false;
+  timeExtFlashT = 0;
   createRoad();
   resetPlayer();
 }
@@ -1690,54 +1695,68 @@ function drawSprite(sp, scale, dx, dy, seg){
 let playerPitch = 0;   // set in render() from the slope just ahead
 
 function drawGateArch(baseSeg){
-  // Find gate post pairs in visible segments and draw the connecting arch
   const DRAW_N = Math.floor(DRAW_DIST / SEG_LEN);
   for(let n = 0; n < DRAW_N; n++){
     const seg = segments[(baseSeg.index + n) % segments.length];
     if(seg.p1.cam.z <= 0) continue;
     const gatePosts = seg.sprites.filter(sp => sp.type === 'gate_post');
     if(gatePosts.length < 2) continue;
-    // Sort by offset to get left and right posts
     gatePosts.sort((a, b) => a.offset - b.offset);
     const left = gatePosts[0], right = gatePosts[gatePosts.length - 1];
     const sx = seg.p1.scr.x, sy = seg.p1.scr.y, sw = seg.p1.scr.w;
     const lx = sx + left.offset * sw / 2;
     const rx = sx + right.offset * sw / 2;
-    const postH = Math.min(72 * seg.p1.scr.scale * 3800, 200);
+    const postH = Math.min(72 * seg.p1.scr.scale * 3800, 220);
     const topY = sy - postH;
-    // Only draw if the gate is reasonably on screen
-    if(rx < -50 || lx > W + 50 || topY > H + 50) continue;
-    // Red/white striped arch bar
-    const barH = Math.max(4, postH * 0.08);
-    const stripes = 6;
+    if(rx < -80 || lx > W + 80 || topY > H + 80) continue;
+
+    // --- posts (red/white stripes) ---
+    const postW = Math.max(4, (rx - lx) * 0.06);
+    for(const px of [lx, rx]){
+      const stripes = 8;
+      const sh = postH / stripes;
+      for(let i = 0; i < stripes; i++){
+        ctx.fillStyle = i % 2 === 0 ? '#F70409' : '#F9F9F8';
+        ctx.fillRect(px - postW/2, topY + i*sh, postW, sh + 1);
+      }
+    }
+
+    // --- overhead gantry bar (thick red/white) ---
+    const barH = Math.max(5, postH * 0.10);
+    const barY = topY;
+    const stripes = 8;
     const stripeW = (rx - lx) / stripes;
     for(let i = 0; i < stripes; i++){
       ctx.fillStyle = i % 2 === 0 ? '#F70409' : '#F9F9F8';
-      ctx.fillRect(lx + i * stripeW, topY, stripeW + 1, barH);
+      ctx.fillRect(lx + i * stripeW, barY, stripeW + 1, barH);
     }
-    // Side arch curves (quadratic curves from post tops to bar ends)
+
+    // --- side arch curves ---
     ctx.strokeStyle = '#F70409';
     ctx.lineWidth = Math.max(2, barH * 0.5);
     ctx.beginPath();
-    ctx.moveTo(lx, topY + barH);
-    ctx.quadraticCurveTo(lx - sw * 0.06, topY + postH * 0.35, lx, sy);
+    ctx.moveTo(lx, barY + barH);
+    ctx.quadraticCurveTo(lx - sw * 0.08, barY + postH * 0.45, lx, sy);
     ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(rx, topY + barH);
-    ctx.quadraticCurveTo(rx + sw * 0.06, topY + postH * 0.35, rx, sy);
+    ctx.moveTo(rx, barY + barH);
+    ctx.quadraticCurveTo(rx + sw * 0.08, barY + postH * 0.45, rx, sy);
     ctx.stroke();
-    // Banner
-    const bannerW = (rx - lx) * 0.55;
-    const bannerH = Math.max(10, postH * 0.14);
+
+    // --- black banner with gold border ---
+    const bannerW = (rx - lx) * 0.65;
+    const bannerH = Math.max(12, postH * 0.18);
     const bannerX = (lx + rx) / 2 - bannerW / 2;
-    const bannerY = topY + barH + 2;
-    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    const bannerY = barY + barH + 3;
+    ctx.fillStyle = 'rgba(0,0,0,0.82)';
     ctx.fillRect(bannerX, bannerY, bannerW, bannerH);
     ctx.strokeStyle = '#ffd700';
     ctx.lineWidth = 1.5;
     ctx.strokeRect(bannerX, bannerY, bannerW, bannerH);
+
+    // --- text ---
     ctx.fillStyle = '#ffd700';
-    ctx.font = `bold ${Math.max(7, Math.min(14, bannerH * 0.55))}px monospace`;
+    ctx.font = `bold ${Math.max(8, Math.min(16, bannerH * 0.55))}px monospace`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('CHECKPOINT', (lx + rx) / 2, bannerY + bannerH / 2);
@@ -2168,6 +2187,28 @@ function render(){
     }
   }
 
+  // TIME EXTENSION flash
+  if(timeExtFlashT > 0 && gameState === 'playing'){
+    const flashA = Math.min(1, timeExtFlashT / 0.4);
+    ctx.fillStyle = `rgba(255,215,0,${(0.18 * flashA).toFixed(3)})`;
+    ctx.fillRect(0, 0, W, H);
+    ctx.save();
+    ctx.font = 'bold 22px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const pulse = 1 + 0.08 * Math.sin(lastTime * 0.025);
+    ctx.translate(W/2, H/2);
+    ctx.scale(pulse, pulse);
+    ctx.fillStyle = '#000';
+    ctx.fillText('TIME EXTENSION', 2, 2);
+    ctx.fillStyle = '#ffd700';
+    ctx.fillText('TIME EXTENSION', 0, 0);
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1;
+    ctx.strokeText('TIME EXTENSION', 0, 0);
+    ctx.restore();
+  }
+
   if(timeLeft < 10 && gameState === 'playing'){
     ctx.fillStyle='rgba(255,0,0,0.2)';
     ctx.fillRect(0,0,W,H);
@@ -2177,6 +2218,7 @@ function render(){
 
 function updatePhysics(dt){
   if(gameState !== 'playing') return;
+  if(timeExtFlashT > 0) timeExtFlashT -= dt;
   const r = ROUTES[route];
 
   // steering eases toward the held thumb button and snaps back to
