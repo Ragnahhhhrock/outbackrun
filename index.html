@@ -264,8 +264,11 @@ const ROAD_W = 1500;      // world half-width of the road
 const DRAW_DIST = 20000;
 // world scroll rate: how fast the road markings and roadside objects stream
 // past per km/h of speed. Stages are stretched by the same factor so their
-// time-to-finish is unchanged — the run just reads much faster.
-const WORLD_SPEED = 14.0;
+// time-to-finish is unchanged — the run just reads much faster. Doubled
+// (14 -> 28) so the lines of the road scroll twice as fast for a stronger
+// sense of speed; per-frame draw cost is unchanged (draw distance is fixed
+// in world units, only track length scales).
+const WORLD_SPEED = 28.0;
 const SPEED_SCALE = WORLD_SPEED / 5.0;
 let trackLen = 0;         // current stage length in world units (set by createRoad)
 const TRAIN_GAP = 1.5;    // segment spacing between road-train units
