@@ -240,6 +240,8 @@ let route = 'nullarbor';
 let hazards = [];            // live obstacles: crawling road trains
 let smokeParts = [];         // tyre-smoke particles: {x, y, vx, vy, life, maxLife, size}
 let crashCooldown = 0;       // invulnerability window after hitting a hazard
+let playerFlip = 0;          // >0 while the ute tumbles after a solid hit
+const FLIP_DUR = 1.1;        // seconds of tumble before the run ends
 let crashMsg = '', crashMsgT = 0;
 let leg = 0;                 // 0-based leg index into LEGS
 let pos = 0;                 // lattice position within the leg (count of right forks)
@@ -274,7 +276,6 @@ let trackLen = 0;         // current stage length in world units (set by createR
 const TRAIN_GAP = 1.5;    // segment spacing between road-train units
 
 const input = { gas:0, brake:0, steer:0, steerTarget:0, gear:0 };
-const trafficPassState = new Map();   // tracks dz sign per traffic car to detect overtakes
 const HZDBG = location.hash.indexOf('hzdbg') !== -1;   // test: outline hazard boxes
 
 // --- tilt drive: roll left/right to steer, tip forward (top edge away) for gas,
@@ -300,6 +301,7 @@ function makeAsset(w,h,draw){
 const ASSETS = {};
 const SHEETS = {};
 let CAR_V = [];            // per-garage-car 3x3x2 variant grids, built in initAssets
+let CRASH_V = [];          // 8-frame flip book of the hero ute, built lazily
 
 // multi-scale sprite sheets, Out Run style: each object is re-rendered at a
 // ladder of fixed sizes and the renderer snaps to the nearest size instead of
@@ -1417,15 +1419,6 @@ function addScenery(){
       }
     }
   }
-  // traffic ramps up gently as the run progresses; the leg ramp is milder
-  // than the arcade's now that everything on the road is solid — the old
-  // 56% ramp was tuned when traffic was decoration you drove straight through
-  const densT = 1 - Math.min(leg, 4) * 0.06;
-  for(let i=35;i<segments.length-35;i+=Math.floor((Math.random()*40+30)*densT)){
-    const side = Math.random()>0.5?1:-1;
-    segments[i].sprites.push({type:'car_traffic',offset:side*0.6,speed:60+Math.random()*55,
-      carIdx:Math.floor(Math.random()*CAR_CATALOG.length), z:i*SEG_LEN});
-  }
   // live hazards: road trains crawl along one lane and are several trailers
   // long. Contact costs you heavily — dodge them.
   hazards = [];
@@ -1472,7 +1465,7 @@ function resetPlayer(){
   };
   timeLeft = times[0];
   stage = 0;
-  crashCooldown = 0; crashMsgT = 0;
+  crashCooldown = 0; crashMsgT = 0; playerFlip = 0;
 }
 
 function resetGame(){
@@ -1583,25 +1576,6 @@ function lampGlow(x, y, w, h){
 function drawSprite(sp, scale, dx, dy, seg){
   // traffic utes come from the multi-scale variant sheets: snap to the
   // nearest size, and pick the yaw/pitch frame the road dictates; the
-  // wheel-spin frame alternates on a timer offset by segment so the
-  // traffic doesn't bounce in lockstep
-  if(sp.type === 'car_traffic'){
-    const pal = SHEETS.uteV[sp.pal || 0];
-    const animF = (Math.floor(lastTime / 110) + (seg ? seg.index : 0)) & 1;
-    const sh = pal[(seg ? vehVariant(seg, findSeg(player.z)) : 4) * 2 + animF];
-    // pick the nearest pre-rendered art, then blit it at the EXACT projected
-    // size (nearest-neighbour crunch): sizes sweep continuously with depth
-    // like the arcade's hardware sprite scaler, so closing speed reads
-    const tw = sh.baseW * scale;
-    const f = pickFrame(sh, tw);
-    const w = Math.min(tw, 120), h = Math.min(tw * sh.baseH / sh.baseW, 120);
-    const x = dx - w/2, y = dy - h;
-    if(y+h < 0 || y > H + 200 || x+w < 0 || x > W) return;
-    if(y + 2 < H) drawShadow(dx, y + h - 1, w * 0.9);
-    ctx.drawImage(sh.canvas, f.x, 0, f.w, f.h, x, y, w, h);
-    tailGlow(x, y, w, h);
-    return;
-  }
   // roadside objects: same stepped-zoom ladders as the hazards — small
   // frames far off, bigger frames snapped in as they bear down
   const entry = SHEETS[sp.type];
@@ -1697,7 +1671,33 @@ function drawGateArch(baseSeg){
   }
 }
 
+// crash flip book: the hero ute pre-rotated in 45-degree steps, so a hit can
+// tumble the car using the same stepped-sprite style as everything else
+function buildCrashSheet(){
+  CRASH_V = [];
+  const src = CAR_V[carChoice][8].canvas;   // neutral rear-view frame
+  for(let k = 0; k < 8; k++){
+    const c = document.createElement('canvas');
+    c.width = 72; c.height = 72;
+    const x = c.getContext('2d');
+    x.imageSmoothingEnabled = false;
+    x.translate(36, 36);
+    x.rotate(k * Math.PI / 4);
+    x.drawImage(src, -24, -13.5, 48, 27);
+    CRASH_V.push(c);
+  }
+  CRASH_V.car = carChoice;
+}
+
 function drawCar(){
+  if(playerFlip > 0){
+    if(CRASH_V.car !== carChoice) buildCrashSheet();
+    const k = Math.min(7, Math.floor((1 - playerFlip / FLIP_DUR) * 8));
+    const dw = 56, dh = 56, cx = W/2, bottom = H - 52;
+    drawShadow(cx, bottom - 2, 44, 0.3);   // skid shadow stays pinned
+    ctx.drawImage(CRASH_V[k], cx - dw/2, bottom - dh, dw, dh);
+    return;                                 // no overlays mid-tumble
+  }
   const bounce = Math.sin(Date.now()*0.018)*0.8;
   const st = effSteer();
   const yaw = st < -0.15 ? -1 : st > 0.15 ? 1 : 0;
@@ -1922,7 +1922,6 @@ function render(){
   // renders in its own segment so the consist draws in correct back-to-front
   // order along the road; the cab leads (furthest), trailers follow.
   const hzBySeg = {};
-  const trBySeg = {};   // moving traffic cars, bucketed by current segment
   const DRAW_N = DRAW_DIST / SEG_LEN;
   for(const hz of hazards){
     for(let u = 0; u <= hz.units; u++){
@@ -1933,42 +1932,25 @@ function render(){
       }
     }
   }
-  // bucket traffic cars by their updated world Z
-  for(let i=0; i<segments.length; i++){
-    for(const sp of segments[i].sprites){
-      if(sp.type !== 'car_traffic') continue;
-      const n = Math.floor((sp.z - player.z) / SEG_LEN);
-      if(n >= 1 && n < DRAW_N){
-        const idx = (baseSeg.index + n) % segments.length;
-        (trBySeg[idx] || (trBySeg[idx] = [])).push(sp);
-      }
-    }
-  }
 
   for(let n=Math.floor(DRAW_DIST/SEG_LEN)-1; n>=0; n--){
     const seg = segments[(baseSeg.index + n) % segments.length];
     if(seg.p1.cam.z <= 0) continue;
     const sScale = seg.p1.scr.scale;
     if(!isFinite(sScale) || sScale <= 0) continue;
-    for(let i=0; i<seg.sprites.length; i++){
-      const sp = seg.sprites[i];
-      if(sp.type === 'car_traffic') continue;   // drawn from trBySeg below
-      const spX = seg.p1.scr.x + sp.offset * seg.p1.scr.w / 2;
-      const spY = seg.p1.scr.y;
-      if(sp.type === 'turn_sign'){
-        drawTurnSign(ctx, spX, spY, sp.dir, sp.severity, sScale);
-        continue;
-      }
-      const scale = sScale * 4500;
-      drawSprite(sp, scale, spX, spY, seg);
-    }
-    // moving traffic cars, rendered from their current segment
-    const tl = trBySeg[seg.index];
-    if(tl && sScale > 0 && isFinite(sScale)){
-      for(const sp of tl){
+    // skip the camera's own segment (n=0): sprites anchored there sit at or
+    // behind the camera plane and project as huge flickering shapes in the
+    // lower foreground while the car is moving
+    if(n >= 1){
+      for(let i=0; i<seg.sprites.length; i++){
+        const sp = seg.sprites[i];
         const spX = seg.p1.scr.x + sp.offset * seg.p1.scr.w / 2;
         const spY = seg.p1.scr.y;
-        const scale = sScale * 6000;
+        if(sp.type === 'turn_sign'){
+          drawTurnSign(ctx, spX, spY, sp.dir, sp.severity, sScale);
+          continue;
+        }
+        const scale = sScale * 4500;
         drawSprite(sp, scale, spX, spY, seg);
       }
     }
@@ -2133,6 +2115,19 @@ function render(){
 function updatePhysics(dt){
   if(gameState !== 'playing') return;
   if(timeExtFlashT > 0) timeExtFlashT -= dt;
+  // tumbling out of control after a solid hit: no steering, no throttle,
+  // the ute slides to a stop and the run ends
+  if(playerFlip > 0){
+    playerFlip -= dt;
+    player.speed = Math.max(0, player.speed - 420 * dt);
+    player.z += player.speed * dt * WORLD_SPEED;
+    player.smoke = 10;
+    if(playerFlip <= 0 || player.speed <= 0){
+      playerFlip = 0; player.speed = 0;
+      gameOver('WRECKED!', 'The outback wins this round.');
+    }
+    return;
+  }
   const r = ROUTES[route];
 
   // steering eases toward the held thumb button and snaps back to
@@ -2203,41 +2198,23 @@ function updatePhysics(dt){
         hitHazard('ROAD TRAIN!', hz.x);
     }
   }
-  // traffic utes and solid roadside scenery share the same contact window.
-  // You can bowl through scrub (saltbush, spinifex, ferns, fences) but a
-  // tree trunk, rock, signpost or another vehicle will stop you.
+  // solid roadside scenery stops you; scrub (saltbush, spinifex, ferns,
+  // fences) is soft — drive straight through it.
   if(crashCooldown <= 0 && player.speed > 25){
     const pSeg = Math.floor(player.z / SEG_LEN);
     for(let n = 0; n <= 4 && crashCooldown <= 0; n++){
       const seg = segments[(pSeg + n) % segments.length];
       for(const sp of seg.sprites){
-        if(sp.type === 'car_traffic'){
-          const carZ = sp.z !== undefined ? sp.z : (pSeg + n) * SEG_LEN;
-          const dz = carZ - player.z;
-          if(dz <= CAR_Z0 || dz > CAR_Z1) continue;
-          if(Math.abs(player.x - sp.offset) < PLAYER_HW + 0.42) hitHazard('TRAFFIC!', sp.offset);
-        } else {
-          const dz = (pSeg + n) * SEG_LEN - player.z;
-          if(dz <= CAR_Z0 || dz > CAR_Z1) continue;
-          const hw = SCENERY_HW[sp.type];
-          if(hw && Math.abs(player.x - sp.offset) < PLAYER_HW + hw)
-            hitHazard(SCENERY_MSG[sp.type] || 'TREE!', sp.offset);
-        }
+        const dz = (pSeg + n) * SEG_LEN - player.z;
+        if(dz <= CAR_Z0 || dz > CAR_Z1) continue;
+        const hw = SCENERY_HW[sp.type];
+        if(hw && Math.abs(player.x - sp.offset) < PLAYER_HW + hw)
+          hitHazard(SCENERY_MSG[sp.type] || 'TREE!', sp.offset);
       }
     }
   }
 
   if(player.smoke > 0) player.smoke -= dt * 10;
-
-  // traffic cars drive down the road at their set speed
-  for(const seg of segments){
-    for(const sp of seg.sprites){
-      if(sp.type === 'car_traffic'){
-        sp.z += sp.speed * dt * WORLD_SPEED;
-        if(sp.z > trackLen) sp.z -= trackLen;
-      }
-    }
-  }
 
   // score ticks up with speed, arcade-style; lap clock runs per stage
   player.scoreF = (player.scoreF || 0) + player.speed * dt * 4.5;
@@ -2278,6 +2255,7 @@ function updatePhysics(dt){
 }
 
 function hitHazard(msg, objX){
+  if(playerFlip > 0) return;   // already tumbling
   auCrash();
   player.speed *= 0.2;
   player.smoke = 14;
@@ -2286,6 +2264,7 @@ function hitHazard(msg, objX){
   crashCooldown = 1.8;
   crashMsg = msg;
   crashMsgT = 1.5;
+  playerFlip = FLIP_DUR;       // the ute tumbles, then the run is over
   // knocked sideways off the object, so you separate instead of grinding
   // along a consist or collecting the same tree twice
   if(objX !== undefined){
@@ -2887,10 +2866,9 @@ function auFrame(){
   // gravel when a wheel drops off the bitumen
   const offroad = playing && Math.abs(player.x) > (seg.width || 1) && player.speed > 40;
   OFF.g.gain.setTargetAtTime(offroad ? 0.22 * spdR + 0.06 : 0, now, 0.08);
-  auTrafficUpdate(now, playing);
 }
 
-// ---- traffic: a small pool of panned diesel/engine voices ----
+// ---- road train voices: a small pool of panned diesel/engine sounds ----
 const VOICES = [];
 function auVehicleVoice(){
   const c = AU.ctx, v = { ref:null };
@@ -2912,14 +2890,6 @@ function auTrafficUpdate(now, playing){
     if(hz.kind !== 'train') continue;
     const dz = hz.z - player.z;
     if(dz > -600 && dz < 1700) cands.push({ ref:hz, dz, x:hz.x, big:true, spd:hz.speed });
-  }
-  const pSeg = Math.floor(player.z / SEG_LEN);         // traffic utes around you
-  for(let i = Math.max(0, pSeg - 2); i < Math.min(segments.length, pSeg + 9); i++){
-    for(const sp of segments[i].sprites){
-      if(sp.type !== 'car_traffic') continue;
-      const dz = i * SEG_LEN - player.z;
-      if(dz > -300 && dz < 1400) cands.push({ ref:sp, dz, x:sp.offset, big:false, spd:sp.speed });
-    }
   }
   cands.sort((a, b) => Math.abs(a.dz) - Math.abs(b.dz));
   const top = cands.slice(0, VOICES.length);
@@ -3258,12 +3228,6 @@ if(location.hash.indexOf('auto') !== -1){
     const ahead = segments[(si + 7) % segments.length];
     const c = ahead ? ahead.curve : 0;
     const threats = [];
-    for(let n = 2; n <= 8; n++){                     // traffic utes ahead
-      const seg = segments[(si + n) % segments.length];
-      for(const sp of seg.sprites){
-        if(sp.type === 'car_traffic') threats.push({ x: sp.offset, hw: 0.5, dz: n * SEG_LEN });
-      }
-    }
     for(const hz of hazards){                        // road trains
       const dz = hz.z - player.z;
       if(dz < 200 || dz > 1700) continue;
@@ -3436,29 +3400,7 @@ if(location.hash.indexOf('showhz') !== -1){
   }));
 }
 
-// debug/test hook: #hitlane plants a traffic ute and a gumtree dead in the
-// driving line so an #auto run must collect both: proves the traffic and
-// scenery hitboxes fire. Wraps createRoad so the plants exist before any
-// #ff fast-forward drive, then re-deals the run with the wrapped builder.
-if(location.hash.indexOf('hitlane') !== -1){
-  const cr = createRoad;
-  createRoad = function(){
-    cr();
-    segments[30].sprites.push({type:'car_traffic', offset:0, speed:80, pal:0});
-    segments[60].sprites.push({type:'gumtree', offset:0});
-  };
-  resetGame(); gameState = 'playing';
-  // synchronous straight-line drive: no autopilot, no rAF dependency. The
-  // car is pinned to x=0 so the run must collect the planted ute and tree;
-  // the harness reads __hitlog to check the exact z-window each box fires in
-  timeLeft = 199;
-  input.gas = 1;
-  for(let i = 0; i < 60 * 140 && player.z < 12800 && gameState === 'playing'; i++){
-    player.x = 0;
-    updatePhysics(1 / 60);
-  }
-  input.gas = 0;
-}
+
 
 // debug/test hook: #timeup starts a run with only 5s left on the clock
 if(location.hash.indexOf('timeup') !== -1){
