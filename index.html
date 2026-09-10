@@ -2379,6 +2379,27 @@ function updatePhysics(dt){
   }
 }
 
+// impact debris: dust billows, paint shards and twisted metal flying out of
+// the hit — gravity + ground bounce, all pixel squares in the game's palette
+function spawnCrashBurst(){
+  const cx = W/2, cy = H - 52 - 30;
+  for(let i = 0; i < 34; i++){
+    const a = Math.random() * Math.PI * 2;
+    const sp = 50 + Math.random() * 240;
+    const roll = Math.random();
+    smokeParts.push({
+      x: cx + (Math.random() - 0.5) * 34,
+      y: cy + (Math.random() - 0.5) * 18,
+      vx: Math.cos(a) * sp,
+      vy: Math.sin(a) * sp - 140,
+      life: 0,
+      maxLife: 0.45 + Math.random() * 0.9,
+      size: 2 + Math.random() * 4,
+      col: roll < 0.45 ? 'dust' : roll < 0.72 ? 'metal' : 'paint'
+    });
+  }
+}
+
 function hitHazard(msg, objX){
   if(playerFlip > 0) return;   // already tumbling
   auCrash();
