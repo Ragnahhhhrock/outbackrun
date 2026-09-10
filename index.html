@@ -242,6 +242,10 @@ let smokeParts = [];         // crash debris/dust particles: {x, y, vx, vy, life
 let crashShake = 0;          // impact screen-shake, decays as you drive on
 let crashCooldown = 0;       // invulnerability window after hitting a hazard
 let recoverT = 0;            // post-crash throttle impairment: the penalty that sticks
+let playerFlip = 0;          // >0 while the ute flips end over end (severe hits)
+const FLIP_DUR = 1.4;        // seconds of tumble before the occupants climb back in
+let occupants = [];          // ejected driver + passenger: {x, y, vx, vy, rot, vr, state}
+let CRASH_V = [];            // 8-frame flip book of the hero ute, built lazily
 let crashMsg = '', crashMsgT = 0;
 let leg = 0;                 // 0-based leg index into LEGS
 let pos = 0;                 // lattice position within the leg (count of right forks)
@@ -1545,7 +1549,7 @@ function resetPlayer(){
   };
   timeLeft = times[0];
   stage = 0;
-  crashCooldown = 0; crashMsgT = 0; recoverT = 0; smokeParts = []; crashShake = 0;
+  crashCooldown = 0; crashMsgT = 0; recoverT = 0; playerFlip = 0; occupants = []; smokeParts = []; crashShake = 0;
 }
 
 function resetGame(){
@@ -1758,7 +1762,38 @@ function drawGateArch(baseSeg){
   }
 }
 
+// crash flip book: the hero ute pre-rotated in 45-degree steps, so a severe
+// hit can tumble the car using the same stepped-sprite style as everything else
+function buildCrashSheet(){
+  CRASH_V = [];
+  const src = CAR_V[carChoice][8].canvas;   // neutral rear-view frame
+  for(let k = 0; k < 8; k++){
+    const c = document.createElement('canvas');
+    c.width = 72; c.height = 72;
+    const x = c.getContext('2d');
+    x.imageSmoothingEnabled = false;
+    x.translate(36, 36);
+    x.rotate(k * Math.PI / 4);
+    x.drawImage(src, -24, -13.5, 48, 27);
+    CRASH_V.push(c);
+  }
+  CRASH_V.car = carChoice;
+}
+
 function drawCar(){
+  if(playerFlip > 0){
+    if(CRASH_V.car !== carChoice) buildCrashSheet();
+    const k = Math.min(7, Math.floor((1 - playerFlip / FLIP_DUR) * 8));
+    const dw = 64, dh = 64, cx = W/2, bottom = H - 52;
+    ctx.save();
+    ctx.translate((Math.random()-0.5)*crashShake*12, (Math.random()-0.5)*crashShake*8);
+    drawShadow(cx, bottom - 2, 44, 0.3);   // skid shadow stays pinned
+    ctx.drawImage(CRASH_V[k], cx - dw/2, bottom - dh, dw, dh);
+    drawDebris();
+    for(const o of occupants) drawOccupant(o);
+    ctx.restore();
+    return;                                 // no overlays mid-flip
+  }
   ctx.save();
   if(crashShake > 0) ctx.translate((Math.random()-0.5)*crashShake*12, (Math.random()-0.5)*crashShake*8);
   const bounce = Math.sin(Date.now()*0.018)*0.8;
@@ -1791,15 +1826,8 @@ function drawCar(){
     ctx.beginPath();ctx.ellipse(cx-15, bottom-5, 5, 3, 0, 0, Math.PI*2);ctx.fill();
     ctx.beginPath();ctx.ellipse(cx+15, bottom-5, 5, 3, 0, 0, Math.PI*2);ctx.fill();
   }
-  // crash debris over the car: dust billows, paint shards and metal skitter
-  for(const p of smokeParts){
-    const f = 1 - p.life / p.maxLife;
-    if(p.col === 'dust') ctx.fillStyle = `rgba(196,174,132,${(0.55*f).toFixed(3)})`;
-    else if(p.col === 'metal') ctx.fillStyle = `rgba(56,56,62,${(0.95*f).toFixed(3)})`;
-    else ctx.fillStyle = `rgba(208,42,30,${(0.95*f).toFixed(3)})`;   // paint
-    const s = p.size * (p.col === 'dust' ? (2.2 - f) : 1);
-    ctx.fillRect(p.x - s/2, p.y - s/2, s, s);
-  }
+  drawDebris();                       // dust billows, paint shards, metal
+  for(const o of occupants) drawOccupant(o);   // anyone climbing back in
   ctx.restore();
 }
 
@@ -2219,6 +2247,46 @@ function updatePhysics(dt){
     p.y += p.vy * dt;
     if(p.y > H - 48){ p.y = H - 48; p.vy *= -0.42; p.vx *= 0.7; }
   }
+
+  // severe crash: the ute tumbles end over end with no steering or throttle.
+  // The occupants spill out over the top of the flip, land, and run back to
+  // the car; when the tumble ends you crawl away with a long recovery.
+  if(playerFlip > 0){
+    playerFlip -= dt;
+    player.speed = Math.max(0, player.speed - 300 * dt);
+    player.z += player.speed * dt * WORLD_SPEED;
+    player.smoke = 12;
+    if(occupants.length === 0 && playerFlip < FLIP_DUR * 0.6){
+      for(const s of [-1, 1]){
+        occupants.push({ x: W/2 + s*8, y: H - 52 - 40,
+          vx: s * (70 + Math.random()*60), vy: -(190 + Math.random()*80),
+          rot: 0, vr: s * (7 + Math.random()*5), state: 'fly' });
+      }
+    }
+    for(let i = occupants.length - 1; i >= 0; i--){
+      const o = occupants[i];
+      if(o.state === 'fly'){
+        o.vy += 620 * dt;
+        o.x += o.vx * dt; o.y += o.vy * dt; o.rot += o.vr * dt;
+        if(o.y >= H - 46){
+          o.y = H - 46; o.state = 'landed';
+          o.rot = Math.round(o.rot / Math.PI) * Math.PI;   // land on their feet
+        }
+      } else if(o.state === 'return'){
+        const dx = W/2 - o.x, dy = (H - 52) - o.y, d = Math.hypot(dx, dy) || 1;
+        o.x += dx/d * 95 * dt; o.y += dy/d * 95 * dt; o.rot = 0;
+        if(d < 9){ occupants.splice(i, 1); spawnDust(o.x, o.y); }
+      }
+    }
+    if(playerFlip <= 0){
+      playerFlip = 0;
+      player.speed = Math.max(player.speed, 15);   // crawl away
+      recoverT = 2.2;
+      player.x = 0;
+      for(const o of occupants) if(o.state === 'landed') o.state = 'return';
+    }
+    return;
+  }
   const r = ROUTES[route];
 
   // steering eases toward the held thumb button and snaps back to
@@ -2367,9 +2435,9 @@ function updatePhysics(dt){
 
 // impact debris: dust billows, paint shards and twisted metal flying out of
 // the hit — gravity + ground bounce, all pixel squares in the game's palette
-function spawnCrashBurst(){
+function spawnCrashBurst(count){
   const cx = W/2, cy = H - 52 - 30;
-  for(let i = 0; i < 34; i++){
+  for(let i = 0; i < count; i++){
     const a = Math.random() * Math.PI * 2;
     const sp = 50 + Math.random() * 240;
     const roll = Math.random();
@@ -2386,21 +2454,78 @@ function spawnCrashBurst(){
   }
 }
 
+// little dust puff, e.g. when an occupant scrambles back into the ute
+function spawnDust(x, y){
+  for(let i = 0; i < 4; i++){
+    smokeParts.push({ x, y, vx: (Math.random()-0.5)*60, vy: -30 - Math.random()*40,
+      life: 0, maxLife: 0.4 + Math.random()*0.3, size: 2 + Math.random()*2, col: 'dust' });
+  }
+}
+
+function drawDebris(){
+  for(const p of smokeParts){
+    const f = 1 - p.life / p.maxLife;
+    if(p.col === 'dust') ctx.fillStyle = `rgba(196,174,132,${(0.55*f).toFixed(3)})`;
+    else if(p.col === 'metal') ctx.fillStyle = `rgba(56,56,62,${(0.95*f).toFixed(3)})`;
+    else ctx.fillStyle = `rgba(208,42,30,${(0.95*f).toFixed(3)})`;   // paint
+    const s = p.size * (p.col === 'dust' ? (2.2 - f) : 1);
+    ctx.fillRect(p.x - s/2, p.y - s/2, s, s);
+  }
+}
+
+// ejected occupant: a tiny pixel person tumbling through the air, then
+// running back to the ute — drawn in the game's flat sprite style
+function drawOccupant(o){
+  ctx.save();
+  ctx.translate(o.x, o.y);
+  ctx.rotate(o.rot);
+  ctx.fillStyle = '#e8b088'; ctx.fillRect(-2, -9, 4, 4);                            // head
+  ctx.fillStyle = '#2a4a8c'; ctx.fillRect(-3, -5, 6, 5);                            // torso
+  ctx.fillStyle = '#1a1a22'; ctx.fillRect(-3, 0, 2, 4); ctx.fillRect(1, 0, 2, 4);   // legs
+  ctx.restore();
+}
+
 function hitHazard(msg, objX){
+  if(playerFlip > 0) return;   // mid-flip: nothing else can touch us
   auCrash();
-  player.speed *= 0.2;         // the hit scrubs off most of your speed
   player.smoke = 14;
-  player.score = Math.max(0, player.score - 2000);
-  if(player.scoreF) player.scoreF = player.score;
-  crashCooldown = 1.8;         // brief grace so you don't re-collect the same object
-  recoverT = 1.8;              // impaired throttle: the lost seconds actually stick
-  crashMsg = msg;
-  crashMsgT = 1.5;
-  spawnCrashBurst();           // dust, paint shards and metal debris
-  crashShake = 1;              // impact shake, decays as you drive on
-  // reset to the centre of the road and keep driving — the crash costs
-  // speed, score and precious seconds, not the run
-  player.x = 0;
+  const v = player.speed;      // impact speed sets the severity tier
+  if(v >= 165){
+    // SEVERE — full-speed hit: the ute flips end over end, the occupants
+    // spill out and climb back in. Huge time loss; the run still continues.
+    player.score = Math.max(0, player.score - 4000);
+    if(player.scoreF) player.scoreF = player.score;
+    crashCooldown = 2.2;
+    recoverT = 0;              // recovery starts after the flip, not during
+    crashMsg = msg; crashMsgT = 2.0;
+    player.speed *= 0.1;
+    spawnCrashBurst(52);
+    crashShake = 1;
+    playerFlip = FLIP_DUR;
+    occupants = [];
+  } else if(v >= 75){
+    // STANDARD — heavy hit: most of your speed, long throttle recovery
+    player.score = Math.max(0, player.score - 2000);
+    if(player.scoreF) player.scoreF = player.score;
+    crashCooldown = 1.8;
+    recoverT = 1.8;
+    crashMsg = msg; crashMsgT = 1.5;
+    player.speed *= 0.2;
+    spawnCrashBurst(34);
+    crashShake = 1;
+    player.x = 0;
+  } else {
+    // MINOR — low-speed clip: a scrape costing a breath of momentum
+    player.score = Math.max(0, player.score - 500);
+    if(player.scoreF) player.scoreF = player.score;
+    crashCooldown = 0.9;
+    recoverT = 0;
+    crashMsg = msg; crashMsgT = 1.0;
+    player.speed *= 0.65;
+    spawnCrashBurst(10);
+    crashShake = 0.4;
+    player.x *= 0.5;           // nudge toward centre, no full reset
+  }
 }
 
 function gameOver(title, text){
