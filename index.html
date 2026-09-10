@@ -250,6 +250,7 @@ const FLIP_DUR = 1.4;        // seconds of tumble before the occupants climb bac
 let occupants = [];          // ejected driver + passenger: {x, y, vx, vy, rot, vr, state}
 let CRASH_V = [];            // 8-frame flip book of the hero ute, built lazily
 let crashMsg = '', crashMsgT = 0;
+let crashCount = 0;            // crashes this run (analytics)
 let leg = 0;                 // 0-based leg index into LEGS
 let pos = 0;                 // lattice position within the leg (count of right forks)
 let path = [];               // 'L'/'R' fork choices made so far
@@ -1558,6 +1559,7 @@ function resetPlayer(){
 
 function resetGame(){
   leg = 0; pos = 0; path = []; finished = false;
+  crashCount = 0;
   node = LEGS[0][0]; route = node.env; stage = 0;
   legBannerT = 2.5;
   gateCrossed = false;
@@ -2489,9 +2491,11 @@ function updatePhysics(dt){
 
   // checkpoint = fork in the road: the side you cross on picks the next stage
   if(player.z >= trackLen){
+    ANALYTICS.event('stage_complete', { leg: leg + 1, stage: stage + 1, route: node.name });
     if(leg >= LEGS.length - 1){
       finished = true;
       const hitTarget = targetDest === pos;
+      ANALYTICS.event('run_complete', { ending: node.end || node.name, target_hit: hitTarget, score: player.score, crashes: crashCount });
       if(hitTarget){ player.score += 25000; if(player.scoreF !== undefined) player.scoreF = player.score; }
       gameOver(hitTarget ? 'TARGET REACHED!' : 'FINISH!',
         (node.end || 'You made it to the east coast!') + (hitTarget ? ' Destination bonus +25,000!' : ''));
@@ -2563,6 +2567,8 @@ function hitHazard(msg, objX){
   auCrash();
   player.smoke = 14;
   const v = player.speed;      // impact speed sets the severity tier
+  crashCount++;
+  ANALYTICS.event('crash', { severity: v >= 165 ? 'severe' : v >= 75 ? 'standard' : 'minor', obstacle: msg, leg: leg + 1 });
   if(v >= 165){
     // SEVERE — full-speed hit: the ute flips end over end, the occupants
     // spill out and climb back in. Huge time loss; the run still continues.
@@ -2603,11 +2609,50 @@ function hitHazard(msg, objX){
 
 function gameOver(title, text){
   gameState = 'over';
+  if(!finished) ANALYTICS.event('run_over', { reason: title, leg: leg + 1, stage: stage + 1, score: player.score, crashes: crashCount });
   if(AU.started){ auMusicStop(); if(finished) auWinJingle(); else auLoseSting(); }
   document.getElementById('go-title').textContent = title;
   document.getElementById('go-text').textContent = text;
   document.getElementById('gameover-screen').style.display = 'flex';
 }
+
+// ---------- analytics: privacy-friendly in-game event tracking ----------
+// No PII, no third-party scripts, no tracking cookies. Events batch to
+// ANALYTICS_ENDPOINT (a tiny free Cloudflare Worker — see analytics-collector.js)
+// and are ALSO aggregated into localStorage for offline inspection:
+//   JSON.parse(localStorage.getItem('obr_analytics_agg') || '{}')
+// Leave ANALYTICS_ENDPOINT = '' and the game stays completely dark.
+const ANALYTICS_ENDPOINT = '';
+const ANALYTICS = {
+  endpoint: ANALYTICS_ENDPOINT,
+  queue: [],
+  session: (function(){ try{ let s = sessionStorage.getItem('obr_as'); if(!s){ s = Math.random().toString(36).slice(2, 10); sessionStorage.setItem('obr_as', s); } return s; }catch(e){ return 'anon'; } })(),
+  event: function(name, props){
+    const ev = { e: name, p: props || {}, t: Date.now(), s: this.session,
+                 d: (window.matchMedia && matchMedia('(hover:none) and (pointer:coarse)').matches) ? 'mobile' : 'desktop' };
+    this.queue.push(ev);
+    try{
+      const agg = JSON.parse(localStorage.getItem('obr_analytics_agg') || '{}');
+      agg[ev.e] = (agg[ev.e] || 0) + 1;
+      if(ev.p.vehicle) agg['vehicle:' + ev.p.vehicle] = (agg['vehicle:' + ev.p.vehicle] || 0) + 1;
+      if(ev.p.severity) agg['crash:' + ev.p.severity] = (agg['crash:' + ev.p.severity] || 0) + 1;
+      localStorage.setItem('obr_analytics_agg', JSON.stringify(agg));
+    }catch(e){}
+    if(this.queue.length >= 8) this.flush();
+  },
+  flush: function(){
+    if(!this.endpoint || !this.queue.length) return;
+    const batch = this.queue.splice(0, 20);
+    const fail = function(){ this.queue.unshift.apply(this.queue, batch); }.bind(this);
+    try{
+      if(navigator.sendBeacon && navigator.sendBeacon(this.endpoint, JSON.stringify({ events: batch }))) return;
+      fetch(this.endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ events: batch }), keepalive: true })
+        .then(function(r){ if(!r.ok) fail(); }).catch(fail);
+    }catch(e){ fail(); }
+  }
+};
+setInterval(function(){ ANALYTICS.flush(); }, 15000);
+addEventListener('pagehide', function(){ ANALYTICS.flush(); });
 
 // ---------- high scores ----------
 const HS_KEY = 'obr_hiscores_v1';
@@ -2887,6 +2932,7 @@ document.getElementById('btn-hs-retry').addEventListener('click', () => {
   document.getElementById('hiscore-screen').style.display = 'none';
   resetGame();
   gameState = 'playing';
+  ANALYTICS.event('run_start', { vehicle: document.getElementById('car-name').textContent.trim() });
 });
 
 document.getElementById('btn-hs-title').addEventListener('click', () => {
@@ -3516,6 +3562,7 @@ document.getElementById('btn-start').addEventListener('click', () => {
   document.getElementById('title-screen').style.display = 'none';
   resetGame();
   gameState = 'playing';
+  ANALYTICS.event('run_start', { vehicle: document.getElementById('car-name').textContent.trim() });
 });
 
 // debug/test hook: #scores opens the hi-score screen directly
