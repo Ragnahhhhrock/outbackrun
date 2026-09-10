@@ -1538,7 +1538,7 @@ function resetPlayer(){
   };
   timeLeft = times[0];
   stage = 0;
-  crashCooldown = 0; crashMsgT = 0; playerFlip = 0;
+  crashCooldown = 0; crashMsgT = 0; playerFlip = 0; smokeParts = []; crashShake = 0;
 }
 
 function resetGame(){
@@ -1774,8 +1774,20 @@ function drawCar(){
     if(CRASH_V.car !== carChoice) buildCrashSheet();
     const k = Math.min(7, Math.floor((1 - playerFlip / FLIP_DUR) * 8));
     const dw = 56, dh = 56, cx = W/2, bottom = H - 52;
+    ctx.save();
+    if(crashShake > 0) ctx.translate((Math.random()-0.5)*crashShake*12, (Math.random()-0.5)*crashShake*8);
     drawShadow(cx, bottom - 2, 44, 0.3);   // skid shadow stays pinned
     ctx.drawImage(CRASH_V[k], cx - dw/2, bottom - dh, dw, dh);
+    // debris over the car: dust billows, paint shards and metal skitter
+    for(const p of smokeParts){
+      const f = 1 - p.life / p.maxLife;
+      if(p.col === 'dust') ctx.fillStyle = `rgba(196,174,132,${(0.55*f).toFixed(3)})`;
+      else if(p.col === 'metal') ctx.fillStyle = `rgba(56,56,62,${(0.95*f).toFixed(3)})`;
+      else ctx.fillStyle = `rgba(208,42,30,${(0.95*f).toFixed(3)})`;   // paint
+      const s = p.size * (p.col === 'dust' ? (2.2 - f) : 1);
+      ctx.fillRect(p.x - s/2, p.y - s/2, s, s);
+    }
+    ctx.restore();
     return;                                 // no overlays mid-tumble
   }
   const bounce = Math.sin(Date.now()*0.018)*0.8;
@@ -2378,6 +2390,8 @@ function hitHazard(msg, objX){
   crashMsg = msg;
   crashMsgT = 1.5;
   playerFlip = FLIP_DUR;       // the ute tumbles, then the run is over
+  spawnCrashBurst();           // dust, paint shards and metal debris
+  crashShake = 1;              // impact shake, decays over the tumble
   // knocked sideways off the object, so you separate instead of grinding
   // along a consist or collecting the same tree twice
   if(objX !== undefined){
