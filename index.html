@@ -238,10 +238,9 @@ const LEGS = [
 
 let route = 'nullarbor';
 let hazards = [];            // live obstacles: hopping roos + crawling road trains
-let smokeParts = [];         // tyre-smoke particles: {x, y, vx, vy, life, maxLife, size}
+let smokeParts = [];         // crash debris/dust particles: {x, y, vx, vy, life, maxLife, size, col}
+let crashShake = 0;          // impact screen-shake, decays as you drive on
 let crashCooldown = 0;       // invulnerability window after hitting a hazard
-let playerFlip = 0;          // >0 while the ute tumbles after a solid hit
-const FLIP_DUR = 1.1;        // seconds of tumble before the run ends
 let crashMsg = '', crashMsgT = 0;
 let leg = 0;                 // 0-based leg index into LEGS
 let pos = 0;                 // lattice position within the leg (count of right forks)
@@ -301,7 +300,6 @@ function makeAsset(w,h,draw){
 const ASSETS = {};
 const SHEETS = {};
 let CAR_V = [];            // per-garage-car 3x3x2 variant grids, built in initAssets
-let CRASH_V = [];          // 8-frame flip book of the hero ute, built lazily
 
 // multi-scale sprite sheets, Out Run style: each object is re-rendered at a
 // ladder of fixed sizes and the renderer snaps to the nearest size instead of
@@ -1538,7 +1536,7 @@ function resetPlayer(){
   };
   timeLeft = times[0];
   stage = 0;
-  crashCooldown = 0; crashMsgT = 0; playerFlip = 0; smokeParts = []; crashShake = 0;
+  crashCooldown = 0; crashMsgT = 0; smokeParts = []; crashShake = 0;
 }
 
 function resetGame(){
@@ -1751,45 +1749,9 @@ function drawGateArch(baseSeg){
   }
 }
 
-// crash flip book: the hero ute pre-rotated in 45-degree steps, so a hit can
-// tumble the car using the same stepped-sprite style as everything else
-function buildCrashSheet(){
-  CRASH_V = [];
-  const src = CAR_V[carChoice][8].canvas;   // neutral rear-view frame
-  for(let k = 0; k < 8; k++){
-    const c = document.createElement('canvas');
-    c.width = 72; c.height = 72;
-    const x = c.getContext('2d');
-    x.imageSmoothingEnabled = false;
-    x.translate(36, 36);
-    x.rotate(k * Math.PI / 4);
-    x.drawImage(src, -24, -13.5, 48, 27);
-    CRASH_V.push(c);
-  }
-  CRASH_V.car = carChoice;
-}
-
 function drawCar(){
-  if(playerFlip > 0){
-    if(CRASH_V.car !== carChoice) buildCrashSheet();
-    const k = Math.min(7, Math.floor((1 - playerFlip / FLIP_DUR) * 8));
-    const dw = 56, dh = 56, cx = W/2, bottom = H - 52;
-    ctx.save();
-    if(crashShake > 0) ctx.translate((Math.random()-0.5)*crashShake*12, (Math.random()-0.5)*crashShake*8);
-    drawShadow(cx, bottom - 2, 44, 0.3);   // skid shadow stays pinned
-    ctx.drawImage(CRASH_V[k], cx - dw/2, bottom - dh, dw, dh);
-    // debris over the car: dust billows, paint shards and metal skitter
-    for(const p of smokeParts){
-      const f = 1 - p.life / p.maxLife;
-      if(p.col === 'dust') ctx.fillStyle = `rgba(196,174,132,${(0.55*f).toFixed(3)})`;
-      else if(p.col === 'metal') ctx.fillStyle = `rgba(56,56,62,${(0.95*f).toFixed(3)})`;
-      else ctx.fillStyle = `rgba(208,42,30,${(0.95*f).toFixed(3)})`;   // paint
-      const s = p.size * (p.col === 'dust' ? (2.2 - f) : 1);
-      ctx.fillRect(p.x - s/2, p.y - s/2, s, s);
-    }
-    ctx.restore();
-    return;                                 // no overlays mid-tumble
-  }
+  ctx.save();
+  if(crashShake > 0) ctx.translate((Math.random()-0.5)*crashShake*12, (Math.random()-0.5)*crashShake*8);
   const bounce = Math.sin(Date.now()*0.018)*0.8;
   const st = effSteer();
   const yaw = st < -0.15 ? -1 : st > 0.15 ? 1 : 0;
@@ -1820,6 +1782,16 @@ function drawCar(){
     ctx.beginPath();ctx.ellipse(cx-15, bottom-5, 5, 3, 0, 0, Math.PI*2);ctx.fill();
     ctx.beginPath();ctx.ellipse(cx+15, bottom-5, 5, 3, 0, 0, Math.PI*2);ctx.fill();
   }
+  // crash debris over the car: dust billows, paint shards and metal skitter
+  for(const p of smokeParts){
+    const f = 1 - p.life / p.maxLife;
+    if(p.col === 'dust') ctx.fillStyle = `rgba(196,174,132,${(0.55*f).toFixed(3)})`;
+    else if(p.col === 'metal') ctx.fillStyle = `rgba(56,56,62,${(0.95*f).toFixed(3)})`;
+    else ctx.fillStyle = `rgba(208,42,30,${(0.95*f).toFixed(3)})`;   // paint
+    const s = p.size * (p.col === 'dust' ? (2.2 - f) : 1);
+    ctx.fillRect(p.x - s/2, p.y - s/2, s, s);
+  }
+  ctx.restore();
 }
 
 function drawTurnSign(ctx, x, y, dir, severity, scale){
@@ -2226,18 +2198,17 @@ function render(){
 function updatePhysics(dt){
   if(gameState !== 'playing') return;
   if(timeExtFlashT > 0) timeExtFlashT -= dt;
-  // tumbling out of control after a solid hit: no steering, no throttle,
-  // the ute slides to a stop and the run ends
-  if(playerFlip > 0){
-    playerFlip -= dt;
-    player.speed = Math.max(0, player.speed - 420 * dt);
-    player.z += player.speed * dt * WORLD_SPEED;
-    player.smoke = 10;
-    if(playerFlip <= 0 || player.speed <= 0){
-      playerFlip = 0; player.speed = 0;
-      gameOver('WRECKED!', 'The outback wins this round.');
-    }
-    return;
+  // crash aftershocks: the shake decays and debris skitters to a stop, but
+  // the player keeps the wheel — a collision costs speed and seconds, not the run
+  if(crashShake > 0) crashShake = Math.max(0, crashShake - dt * 1.6);
+  for(let i = smokeParts.length - 1; i >= 0; i--){
+    const p = smokeParts[i];
+    p.life += dt;
+    if(p.life >= p.maxLife){ smokeParts.splice(i, 1); continue; }
+    p.vy += 700 * dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    if(p.y > H - 48){ p.y = H - 48; p.vy *= -0.42; p.vx *= 0.7; }
   }
   const r = ROUTES[route];
 
@@ -2401,25 +2372,19 @@ function spawnCrashBurst(){
 }
 
 function hitHazard(msg, objX){
-  if(playerFlip > 0) return;   // already tumbling
   auCrash();
-  player.speed *= 0.2;
+  player.speed *= 0.2;         // the hit scrubs off most of your speed
   player.smoke = 14;
   player.score = Math.max(0, player.score - 2000);
   if(player.scoreF) player.scoreF = player.score;
-  crashCooldown = 1.8;
+  crashCooldown = 1.8;         // brief grace so you don't re-collect the same object
   crashMsg = msg;
   crashMsgT = 1.5;
-  playerFlip = FLIP_DUR;       // the ute tumbles, then the run is over
   spawnCrashBurst();           // dust, paint shards and metal debris
-  crashShake = 1;              // impact shake, decays over the tumble
-  // knocked sideways off the object, so you separate instead of grinding
-  // along a consist or collecting the same tree twice
-  if(objX !== undefined){
-    player.x += (player.x >= objX ? 1 : -1) * 0.3;
-    if(player.x < -1.5) player.x = -1.5;
-    if(player.x > 1.5) player.x = 1.5;
-  }
+  crashShake = 1;              // impact shake, decays as you drive on
+  // reset to the centre of the road and keep driving — the crash costs
+  // speed, score and precious seconds, not the run
+  player.x = 0;
 }
 
 function gameOver(title, text){
