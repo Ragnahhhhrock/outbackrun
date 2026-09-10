@@ -1762,19 +1762,81 @@ function drawGateArch(baseSeg){
   }
 }
 
-// crash flip book: the hero ute pre-rotated in 45-degree steps, so a severe
-// hit can tumble the car using the same stepped-sprite style as everything else
+// crash flip book: 16 frames of a full end-over-end tumble through four
+// views — rear, plan (top), front, and underside — with foreshortening
+// between the key angles, so the wreck reads as a real 3D flip rather than
+// a flat in-plane spin. Plan views are drawn in the car's own sampled paint.
 function buildCrashSheet(){
   CRASH_V = [];
   const src = CAR_V[carChoice][8].canvas;   // neutral rear-view frame
-  for(let k = 0; k < 8; k++){
+
+  // sample the sprite's dominant saturated colour (body) and dominant dark
+  // colour (glass/trim) so the roof and underbody always match the paint job
+  const hist = {};
+  const sd = src.getContext('2d').getImageData(0, 0, src.width, src.height).data;
+  for(let i = 0; i < sd.length; i += 4){
+    if(sd[i+3] < 128) continue;
+    const key = sd[i]+','+sd[i+1]+','+sd[i+2];
+    hist[key] = (hist[key] || 0) + 1;
+  }
+  const hex = v => '#'+v.map(n => n.toString(16).padStart(2, '0')).join('');
+  let bodyCol = '#c02418', bodyN = 0, cabCol = '#181820', cabN = 0;
+  for(const k in hist){
+    const v = k.split(',').map(Number);
+    const mx = Math.max(...v), mn = Math.min(...v);
+    if(mx - mn > 40 && mx > 90 && hist[k] > bodyN){ bodyCol = hex(v); bodyN = hist[k]; }
+    if(mx < 80 && hist[k] > cabN){ cabCol = hex(v); cabN = hist[k]; }
+  }
+
+  // plan-view sprite: true top, or the dark underbody with diff and exhaust
+  const plan = underside => {
     const c = document.createElement('canvas');
-    c.width = 72; c.height = 72;
+    c.width = 96; c.height = 96;
     const x = c.getContext('2d');
     x.imageSmoothingEnabled = false;
-    x.translate(36, 36);
-    x.rotate(k * Math.PI / 4);
-    x.drawImage(src, -24, -13.5, 48, 27);
+    x.fillStyle = '#14141a';
+    x.fillRect(22, 26, 8, 14); x.fillRect(66, 26, 8, 14);   // front axle
+    x.fillRect(22, 56, 8, 14); x.fillRect(66, 56, 8, 14);   // rear axle
+    if(!underside){
+      x.fillStyle = bodyCol; x.fillRect(28, 14, 40, 68);    // body, nose up
+      x.fillStyle = 'rgba(0,0,0,0.18)'; x.fillRect(28, 14, 40, 10);   // bonnet shade
+      x.fillStyle = cabCol; x.fillRect(31, 34, 34, 28);     // cabin
+      x.fillStyle = '#0e1420';
+      x.fillRect(33, 34, 30, 5); x.fillRect(33, 57, 30, 5); // glass
+      x.fillStyle = '#e8d878';
+      x.fillRect(31, 15, 6, 3); x.fillRect(59, 15, 6, 3);   // headlights
+      x.fillStyle = '#a01818';
+      x.fillRect(31, 78, 6, 3); x.fillRect(59, 78, 6, 3);   // tail lights
+    } else {
+      x.fillStyle = '#26262e'; x.fillRect(28, 14, 40, 68);  // chassis pan
+      x.fillStyle = '#3a3a44'; x.fillRect(40, 42, 16, 14);  // diff bulge
+      x.fillStyle = '#55555e'; x.fillRect(45, 18, 5, 60);   // exhaust run
+      x.fillStyle = '#1c1c22'; x.fillRect(30, 16, 36, 4);   // front valance
+    }
+    return c;
+  };
+  const topV = plan(false), underV = plan(true);
+
+  // one full revolution in 16 steps; the visible view changes per quadrant
+  for(let k = 0; k < 16; k++){
+    const a = k * Math.PI / 8;
+    const q = Math.floor(k / 4);
+    const sq = Math.max(0.12, Math.abs(q === 0 ? Math.cos(a) : q === 1 ? Math.sin(a) : q === 2 ? -Math.cos(a) : -Math.sin(a)));
+    const c = document.createElement('canvas');
+    c.width = 96; c.height = 96;
+    const x = c.getContext('2d');
+    x.imageSmoothingEnabled = false;
+    x.translate(48, 48);
+    if(q === 0){          // 0-90: rear view foreshortening away
+      x.drawImage(src, -38, -21.5 * sq, 76, 43 * sq);
+    } else if(q === 1){   // 90-180: roof plan foreshortening to the front
+      x.drawImage(topV, -27, -36 * sq, 54, 72 * sq);
+    } else if(q === 2){   // 180-270: upside-down front coming into view
+      x.scale(1, -1);
+      x.drawImage(src, -38, -21.5 * sq, 76, 43 * sq);
+    } else {              // 270-360: underside foreshortening back to rear
+      x.drawImage(underV, -28, -36 * sq, 56, 72 * sq);
+    }
     CRASH_V.push(c);
   }
   CRASH_V.car = carChoice;
@@ -1782,13 +1844,15 @@ function buildCrashSheet(){
 
 function drawCar(){
   if(playerFlip > 0){
-    if(CRASH_V.car !== carChoice) buildCrashSheet();
-    const k = Math.min(7, Math.floor((1 - playerFlip / FLIP_DUR) * 8));
-    const dw = 64, dh = 64, cx = W/2, bottom = H - 52;
+    if(CRASH_V.car !== carChoice || CRASH_V.length !== 16) buildCrashSheet();
+    const t = 1 - playerFlip / FLIP_DUR;             // 0..1 through the tumble
+    const k = Math.min(15, Math.floor(t * 16));
+    const cx = W/2, bottom = H - 52;
+    const lift = Math.sin(Math.PI * t) * 52;         // arc up over the flip
     ctx.save();
     ctx.translate((Math.random()-0.5)*crashShake*12, (Math.random()-0.5)*crashShake*8);
-    drawShadow(cx, bottom - 2, 44, 0.3);   // skid shadow stays pinned
-    ctx.drawImage(CRASH_V[k], cx - dw/2, bottom - dh, dw, dh);
+    drawShadow(cx, bottom - 2, 44 * (1 - 0.35 * Math.sin(Math.PI * t)), 0.3 * (1 - 0.5 * t));
+    ctx.drawImage(CRASH_V[k], cx - 48, bottom - lift - 96, 96, 96);
     drawDebris();
     for(const o of occupants) drawOccupant(o);
     ctx.restore();
@@ -2272,10 +2336,6 @@ function updatePhysics(dt){
           o.y = H - 46; o.state = 'landed';
           o.rot = Math.round(o.rot / Math.PI) * Math.PI;   // land on their feet
         }
-      } else if(o.state === 'return'){
-        const dx = W/2 - o.x, dy = (H - 52) - o.y, d = Math.hypot(dx, dy) || 1;
-        o.x += dx/d * 95 * dt; o.y += dy/d * 95 * dt; o.rot = 0;
-        if(d < 9){ occupants.splice(i, 1); spawnDust(o.x, o.y); }
       }
     }
     if(playerFlip <= 0){
@@ -2283,7 +2343,8 @@ function updatePhysics(dt){
       player.speed = Math.max(player.speed, 15);   // crawl away
       recoverT = 2.2;
       player.x = 0;
-      for(const o of occupants) if(o.state === 'landed') o.state = 'return';
+      // the ute is back on the road: anyone still on the tar vanishes with it
+      occupants = [];
     }
     return;
   }
@@ -2451,14 +2512,6 @@ function spawnCrashBurst(count){
       size: 2 + Math.random() * 4,
       col: roll < 0.45 ? 'dust' : roll < 0.72 ? 'metal' : 'paint'
     });
-  }
-}
-
-// little dust puff, e.g. when an occupant scrambles back into the ute
-function spawnDust(x, y){
-  for(let i = 0; i < 4; i++){
-    smokeParts.push({ x, y, vx: (Math.random()-0.5)*60, vy: -30 - Math.random()*40,
-      life: 0, maxLife: 0.4 + Math.random()*0.3, size: 2 + Math.random()*2, col: 'dust' });
   }
 }
 
