@@ -1494,7 +1494,14 @@ function project(p, cx, cy, cz){
   p.cam.x = p.world.x - cx;
   p.cam.y = p.world.y - cy;
   p.cam.z = p.world.z - cz;
-  p.scr.scale = camDepth / Math.max(p.cam.z, 1);
+  // Flicker fix: a segment end landing within a whisker of the camera plane
+  // (fractional z about to cross a segment boundary, worsened on crests)
+  // clamped cam.z to 1 and projected multi-million-pixel widths for a single
+  // frame — red rumble wedges across the sky, or road quads collapsing to a
+  // thin sliver while the ground floods one colour. Nothing visible lives
+  // closer than SEG_LEN/16 to the camera, and legitimate near-road geometry
+  // projects far below this cap, so the clamp only ever catches garbage frames.
+  p.scr.scale = Math.min(camDepth / Math.max(p.cam.z, 1), camDepth * 16 / SEG_LEN);
   p.scr.x = Math.round(W/2 + (p.cam.x * p.scr.scale) * (W/2));
   p.scr.y = Math.round(horizonY - (p.cam.y * p.scr.scale) * (H/2));
   p.scr.w = Math.round(2 * p.scr.scale * ROAD_W * (p.w || 1) * (W/2));
@@ -1823,7 +1830,7 @@ function render(){
     project(seg.p2, playerX*ROAD_W - curveOffset - curveOffsetDelta, CAM_H + camBounce + baseSeg.p2.world.y, player.z);
     curveOffset += curveOffsetDelta;
     curveOffsetDelta += seg.curve;
-    if(seg.p1.cam.z <= 0 || seg.p1.scr.y > H+300 || seg.p2.scr.y >= maxy || seg.p2.scr.y >= seg.p1.scr.y) continue;
+    if(seg.p1.cam.z <= 0 || !isFinite(seg.p1.scr.x + seg.p1.scr.w + seg.p2.scr.w) || seg.p1.scr.y > H+300 || seg.p2.scr.y >= maxy || seg.p2.scr.y >= seg.p1.scr.y) continue;
 
     const x1=seg.p1.scr.x, y1=seg.p1.scr.y, w1=seg.p1.scr.w;
     const x2=seg.p2.scr.x, y2=seg.p2.scr.y, w2=seg.p2.scr.w;
@@ -1861,7 +1868,8 @@ function render(){
     for(let i = 0; i < pts.length - 1; i++){
       const a = pts[i], b = pts[i+1];
       ctx.strokeStyle = col || a.col;
-      ctx.lineWidth = Math.max(1.2, (a.w + b.w) * 0.5 * widthMul);
+      // flicker fix: never let a stroke exceed half the screen height
+      ctx.lineWidth = Math.min(H * 0.5, Math.max(1.2, (a.w + b.w) * 0.5 * widthMul));
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
       ctx.lineTo(b.x, b.y);
