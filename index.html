@@ -241,6 +241,7 @@ let hazards = [];            // live obstacles: hopping roos + crawling road tra
 let smokeParts = [];         // crash debris/dust particles: {x, y, vx, vy, life, maxLife, size, col}
 let crashShake = 0;          // impact screen-shake, decays as you drive on
 let crashCooldown = 0;       // invulnerability window after hitting a hazard
+let recoverT = 0;            // post-crash throttle impairment: the penalty that sticks
 let crashMsg = '', crashMsgT = 0;
 let leg = 0;                 // 0-based leg index into LEGS
 let pos = 0;                 // lattice position within the leg (count of right forks)
@@ -1497,12 +1498,12 @@ function addScenery(){
   hazards = [];
   const nS = segments.length;
   const densT = 1 - Math.min(leg, 4) * 0.06;
-  const rooEvery = (r.diff === 'easy' ? 100 : r.diff === 'normal' ? 80 : 63) * densT;
+  const rooEvery = (r.diff === 'easy' ? 170 : r.diff === 'normal' ? 135 : 105) * densT;
   for(let i=28;i<nS-22;i+=Math.floor(Math.random()*rooEvery+rooEvery*0.6)){
     hazards.push({ kind:'roo', z:i*SEG_LEN, t:Math.random()*6,
-      omega:1.1+Math.random()*0.6, amp:1.15+Math.random()*0.3, x:0, hop:0 });
+      omega:1.1+Math.random()*0.6, amp:1.05+Math.random()*0.25, x:0, hop:0 });
   }
-  const trainEvery = (r.diff === 'easy' ? 70 : r.diff === 'normal' ? 55 : 42) * densT;
+  const trainEvery = (r.diff === 'easy' ? 115 : r.diff === 'normal' ? 95 : 72) * densT;
   // consists match the country each leg crosses: fuel tankers on the
   // Nullarbor, grain tippers out of the Red Centre, cattle crates on the
   // Divide, a bit of everything up the Top End
@@ -1517,7 +1518,7 @@ function addScenery(){
   const mix = TRAIN_MIX[route] || TRAIN_MIX.nullarbor;
   for(let i=45;i<nS-55;i+=Math.floor(Math.random()*trainEvery+trainEvery*0.6)){
     const roll = Math.random();
-    const units = roll < 0.25 ? 2 : roll < 0.8 ? 3 : 4;   // up to 4 trailers: a proper monster
+    const units = roll < 0.35 ? 2 : roll < 0.85 ? 3 : 4;   // up to 4 trailers: a proper monster
     const types = [];
     for(let u = 0; u < units; u++) types.push(mix[Math.floor(Math.random()*mix.length)]);
     hazards.push({ kind:'train', z:i*SEG_LEN,
@@ -1544,7 +1545,7 @@ function resetPlayer(){
   };
   timeLeft = times[0];
   stage = 0;
-  crashCooldown = 0; crashMsgT = 0; smokeParts = []; crashShake = 0;
+  crashCooldown = 0; crashMsgT = 0; recoverT = 0; smokeParts = []; crashShake = 0;
 }
 
 function resetGame(){
@@ -2228,7 +2229,9 @@ function updatePhysics(dt){
 
   const gasIn = effGas(), brakeIn = effBrake();
   if(gasIn > 0){
-    player.speed += player.accel * gasIn * dt;
+    // post-crash the engine coughs: throttle impaired while recoverT runs,
+    // so a hit costs ~5s of acceleration, not a 2s blip back to top speed
+    player.speed += player.accel * gasIn * dt * (recoverT > 0 ? 0.3 : 1);
     if(player.speed < 30 && player.gear === 0) player.smoke = 8;
   }
   if(brakeIn > 0){
@@ -2277,6 +2280,7 @@ function updatePhysics(dt){
   const CAR_Z0 = 1000, CAR_Z1 = 1200, PLAYER_HW = 0.09;
   if(crashCooldown > 0) crashCooldown -= dt;
   if(crashMsgT > 0) crashMsgT -= dt;
+  if(recoverT > 0) recoverT -= dt;
   for(const hz of hazards){
     if(hz.kind === 'roo'){
       hz.t += dt;
@@ -2389,6 +2393,7 @@ function hitHazard(msg, objX){
   player.score = Math.max(0, player.score - 2000);
   if(player.scoreF) player.scoreF = player.score;
   crashCooldown = 1.8;         // brief grace so you don't re-collect the same object
+  recoverT = 1.8;              // impaired throttle: the lost seconds actually stick
   crashMsg = msg;
   crashMsgT = 1.5;
   spawnCrashBurst();           // dust, paint shards and metal debris
