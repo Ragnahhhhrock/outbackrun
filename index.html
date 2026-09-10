@@ -69,7 +69,7 @@ canvas{display:block;width:100%;height:100%;image-rendering:pixelated;}
     width:100svh;height:100svw;}
 }
 #title-screen{position:absolute;top:0;left:0;width:100%;height:100%;background:#1a0f0a;display:flex;flex-direction:column;align-items:center;z-index:100;text-align:center;padding:12px;overflow-y:auto;}
-#title-inner{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);transform-origin:center center;}
+#title-inner{margin:auto;}
 #logo-img{width:min(300px,72vw);height:auto;image-rendering:auto;margin-bottom:2px;}
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);}
 #title-screen h1{font-size:44px;color:#ffd700;text-shadow:4px 4px 0 #8B4513,0 0 20px rgba(255,215,0,0.4);letter-spacing:4px;margin-bottom:8px;}
@@ -252,6 +252,7 @@ let pos = 0;                 // lattice position within the leg (count of right 
 let path = [];               // 'L'/'R' fork choices made so far
 let node = LEGS[0][0];       // current stage node
 let legBannerT = 0;          // seconds left to show the stage-name banner
+let bonzaT = 0;              // seconds left to show BONZA! at the stage gate
 let finished = false;        // reached an ending node
 let timeExtFlashT = 0;       // seconds left to show TIME EXTENSION flash
 let gateCrossed = false;     // prevent double-trigger on the same gate
@@ -1549,7 +1550,7 @@ function resetPlayer(){
   };
   timeLeft = times[0];
   stage = 0;
-  crashCooldown = 0; crashMsgT = 0; recoverT = 0; playerFlip = 0; occupants = []; smokeParts = []; crashShake = 0;
+  crashCooldown = 0; crashMsgT = 0; recoverT = 0; playerFlip = 0; occupants = []; smokeParts = []; crashShake = 0; bonzaT = 0;
 }
 
 function resetGame(){
@@ -2258,11 +2259,19 @@ function render(){
     hudText(node.name.toUpperCase(), W/2, 112, '#ffd700', 15, 'center');
   }
 
+  // BONZA! — Aussie approval at the stage gate
+  if(bonzaT > 0 && gameState === 'playing'){
+    if(Math.floor(lastTime / 140) % 2 === 0){
+      hudText('BONZA!', W/2, 66, '#7cfc00', 24, 'center');
+    }
+  }
+
   // hazard impact flash
   if(crashMsgT > 0 && gameState === 'playing'){
     ctx.fillStyle = `rgba(255,60,0,${(0.25 * Math.min(1, crashMsgT)).toFixed(3)})`;
     ctx.fillRect(0, 0, W, H);
     if(Math.floor(lastTime / 120) % 2 === 0){
+      hudText('STRUTH!', W/2, 62, '#ff5544', 15, 'center');
       hudText(crashMsg, W/2, 86, '#ffdd33', 20, 'center');
     }
   }
@@ -2355,6 +2364,7 @@ function updatePhysics(dt){
   input.steer += (input.steerTarget - input.steer) * Math.min(1, dt * 10);
   if(Math.abs(input.steerTarget - input.steer) < 0.02) input.steer = input.steerTarget;
   if(legBannerT > 0) legBannerT -= dt;
+  if(bonzaT > 0) bonzaT -= dt;
 
   const gasIn = effGas(), brakeIn = effBrake();
   if(gasIn > 0){
@@ -2434,6 +2444,12 @@ function updatePhysics(dt){
           hitHazard('ROAD TRAIN!', hz.x);
       }
     }
+    // overtaking whoosh: first time the tail slips from ahead to behind us
+    if(hz.kind === 'train' && !hz.passed &&
+       hz.z + hz.units * SEG_LEN * TRAIN_GAP < player.z - 40){
+      hz.passed = true;
+      if(Math.abs(player.x - hz.x) < 1.3) auWhoosh();
+    }
   }
   // solid roadside scenery stops you; scrub (saltbush, spinifex, ferns,
   // fences) is soft — drive straight through it. The scan must reach n=6:
@@ -2490,6 +2506,7 @@ function updatePhysics(dt){
     player.z = 0; player.x = 0;
     createRoad();
     legBannerT = 2.5;
+    bonzaT = 2.0;
     auFanfare();
   }
 }
@@ -3232,6 +3249,22 @@ function auTone(t, midi, dur, type, gain, dest){
   o.connect(g); g.connect(dest || AU.sfxBus);
   o.start(t); o.stop(t + dur + 0.05);
 }
+function auWhoosh(){
+  if(!AU.started) return;
+  // overtaking whoosh: noise swept up through a bandpass, doppler-style
+  const c = AU.ctx, t = c.currentTime;
+  const src = c.createBufferSource(); src.buffer = AU.noiseBuf;
+  const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.1;
+  bp.frequency.setValueAtTime(320, t);
+  bp.frequency.exponentialRampToValueAtTime(1900, t + 0.32);
+  const g = c.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.38, t + 0.06);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+  src.connect(bp); bp.connect(g); g.connect(AU.sfxBus);
+  src.start(t, Math.random() * 0.8); src.stop(t + 0.5);
+}
+
 function auCrash(){
   if(!AU.started) return;
   const c = AU.ctx, now = c.currentTime;
@@ -3585,25 +3618,6 @@ if(location.hash.indexOf('auto') !== -1){
 }
 
 const elTitle = document.getElementById('title-screen');
-// menu auto-fit: the game force-rotates to landscape when the device is held
-// portrait (CSS at the top), so the menu's available height becomes the
-// screen's WIDTH — far shorter than the menu's natural height on tall phones.
-// touch-action:none blocks touch-scrolling, so instead of relying on
-// overflow-y, measure the menu and shrink it to fit the viewport entirely.
-const elTitleInner = document.getElementById('title-inner');
-function fitTitleMenu(){
-  if(!elTitleInner || elTitle.style.display === 'none') return;
-  const pad = 24; // #title-screen vertical padding (12px top + bottom)
-  const avail = elTitle.clientHeight - pad;
-  const need = elTitleInner.scrollHeight;
-  const s = (avail > 0 && need > avail) ? avail / need : 1;
-  elTitleInner.style.transform = 'translate(-50%,-50%) scale(' + s + ')';
-}
-new MutationObserver(fitTitleMenu).observe(elTitle, {attributes:true, attributeFilter:['style']});
-window.addEventListener('resize', fitTitleMenu);
-window.addEventListener('orientationchange', () => setTimeout(fitTitleMenu, 60));
-window.addEventListener('load', fitTitleMenu);
-fitTitleMenu();
 const elMap = document.getElementById('map-screen');
 const elHs = document.getElementById('hiscore-screen');
 const elInit = document.getElementById('initials-screen');
