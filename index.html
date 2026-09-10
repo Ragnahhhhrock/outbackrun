@@ -2187,18 +2187,27 @@ function render(){
     ctx.fillRect(0, 0, W, H);
     if(nf > 0.5){
       const beam = (nf - 0.5) * 2;
-      const grd = ctx.createLinearGradient(0, H, 0, H * 0.38);
+      // beams originate at the FRONT of the ute, where the headlights sit:
+      // the far (top) edge of the 48x27 car sprite, same bounce applied, not
+      // from behind the rear bumper — that would read as tail lights
+      const cb = Math.sin(Date.now()*0.018)*0.8;         // matches drawCar's bounce
+      const carFront = H - 52 + cb - 27;                 // top edge of car sprite
+      const grd = ctx.createLinearGradient(0, carFront, 0, H * 0.38);
       grd.addColorStop(0, `rgba(255,240,180,${(0.34 * beam).toFixed(3)})`);
       grd.addColorStop(1, 'rgba(255,240,180,0)');
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
       ctx.fillStyle = grd;
       ctx.beginPath();
-      ctx.moveTo(W/2 - 16, H - 48);
-      ctx.lineTo(W/2 + 16, H - 48);
+      ctx.moveTo(W/2 - 14, carFront);
+      ctx.lineTo(W/2 + 14, carFront);
       ctx.lineTo(W/2 + 90, H * 0.38);
       ctx.lineTo(W/2 - 90, H * 0.38);
       ctx.closePath(); ctx.fill();
+      // twin headlight glints right at the lens, so the source reads clearly
+      ctx.fillStyle = `rgba(255,246,210,${(0.30 * beam).toFixed(3)})`;
+      ctx.beginPath(); ctx.ellipse(W/2 - 13, carFront + 2, 5, 2.2, 0, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(W/2 + 13, carFront + 2, 5, 2.2, 0, 0, Math.PI*2); ctx.fill();
       // twin glow spots where the beams land on the road
       ctx.fillStyle = `rgba(255,244,200,${(0.22 * beam).toFixed(3)})`;
       ctx.beginPath(); ctx.ellipse(W/2 - 11, H * 0.48, 11, 3, 0, 0, Math.PI*2); ctx.fill();
@@ -3639,7 +3648,18 @@ if(location.hash.indexOf('auto') !== -1){
   // roos by evaluating both corridors and committing to the wider one
   // (like a player would)
   let dodgeSide = 0;
+  // automation handle: lets headless recorders/test rigs observe the run and
+  // take the wheel (force=true hands all input to the automation)
+  window.__AUTO__ = {
+    force: false,
+    get state(){ return { gameState, z: player.z, x: player.x, speed: player.speed, gear: player.gear, timeLeft, leg, finished, crashed: player.crashed }; },
+    get player(){ return player; },
+    get hazards(){ return hazards; },
+    get segments(){ return segments; },
+    input,
+  };
   const autoDrive = () => {
+    if(window.__AUTO__ && window.__AUTO__.force) return;
     if(forkM && (trackLen - player.z) < 3000){ input.steerTarget = forkSteer; return; }
     const si = findSeg(player.z).index;
     const ahead = segments[(si + 7) % segments.length];
