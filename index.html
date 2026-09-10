@@ -1424,11 +1424,19 @@ const ROUTE_FLORA = {
 const SCENERY_HW = {
   gumtree:0.09, tree:0.09, deadtree:0.08, desertoak:0.08, boab:0.14, palm:0.08,
   rock:0.14, termite:0.12, uluru:0.30, windmill:0.12,
-  sign_kangaroo:0.06, sign_roadtrain:0.06, sign_speed:0.06, sign_flood:0.06, lamp:0.05
+  sign_kangaroo:0.06, sign_roadtrain:0.06, sign_speed:0.06, sign_flood:0.06, lamp:0.05,
+  turn_sign:0.06, gate_post:0.08,
+  animal_kangaroo:0.14, animal_emu:0.12, animal_dingo:0.10, animal_camel:0.18,
+  animal_wombat:0.10, animal_cow:0.18, animal_buffalo:0.18, animal_croc:0.14,
+  animal_sheep:0.10, animal_koala:0.06
 };
 const SCENERY_MSG = {
   rock:'ROCK!', termite:'TERMITE MOUND!', uluru:'ROCK!', windmill:'WINDMILL!',
-  sign_kangaroo:'SIGN!', sign_roadtrain:'SIGN!', sign_speed:'SIGN!', sign_flood:'SIGN!', lamp:'LAMP POST!'
+  sign_kangaroo:'SIGN!', sign_roadtrain:'SIGN!', sign_speed:'SIGN!', sign_flood:'SIGN!', lamp:'LAMP POST!',
+  turn_sign:'SIGN!', gate_post:'GATE POST!',
+  animal_kangaroo:'ROO!', animal_emu:'EMU!', animal_dingo:'DINGO!', animal_camel:'CAMEL!',
+  animal_wombat:'WOMBAT!', animal_cow:'COW!', animal_buffalo:'BUFFALO!', animal_croc:'CROC!',
+  animal_sheep:'SHEEP!', animal_koala:'KOALA!'
 };
 // and what lives along it
 const ROUTE_FAUNA = {
@@ -2295,10 +2303,13 @@ function updatePhysics(dt){
     }
   }
   // solid roadside scenery stops you; scrub (saltbush, spinifex, ferns,
-  // fences) is soft — drive straight through it.
+  // fences) is soft — drive straight through it. The scan must reach n=6:
+  // the car sprite sits 1000-1200 units ahead (CAR_Z window) and segments
+  // are 200 long, so only the 6th segment ahead can ever enter the window —
+  // a shallower scan left this collision dead.
   if(crashCooldown <= 0 && player.speed > 25){
     const pSeg = Math.floor(player.z / SEG_LEN);
-    for(let n = 0; n <= 4 && crashCooldown <= 0; n++){
+    for(let n = 0; n <= 7 && crashCooldown <= 0; n++){
       const seg = segments[(pSeg + n) % segments.length];
       for(const sp of seg.sprites){
         const dz = (pSeg + n) * SEG_LEN - player.z;
