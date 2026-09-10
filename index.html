@@ -2623,6 +2623,27 @@ function gameOver(title, text){
 //   JSON.parse(localStorage.getItem('obr_analytics_agg') || '{}')
 // Leave ANALYTICS_ENDPOINT = '' and the game stays completely dark.
 const ANALYTICS_ENDPOINT = '';
+// Google Analytics 4 (optional, independent of the endpoint above): paste a
+// GA4 Measurement ID (G-XXXXXXXXXX) to ALSO mirror every event as a GA4
+// custom event with the same properties (vehicle, severity, leg, ...).
+// Leave '' to keep Google out of the loop entirely. Register the parameters
+// you care about as custom dimensions in GA (Admin > Custom definitions)
+// to break reports down by vehicle/severity/ending.
+const GA_MEASUREMENT_ID = '';
+let gaBooted = false;
+function gaBoot(){
+  if(gaBooted || !GA_MEASUREMENT_ID) return;
+  gaBooted = true;
+  window.dataLayer = window.dataLayer || [];
+  window.gtag = function(){ window.dataLayer.push(arguments); };
+  const s = document.createElement('script');
+  s.async = true;
+  s.src = 'https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent(GA_MEASUREMENT_ID);
+  document.head.appendChild(s);
+  window.gtag('js', new Date());
+  window.gtag('config', GA_MEASUREMENT_ID);
+}
+if(GA_MEASUREMENT_ID) addEventListener('load', gaBoot);
 const ANALYTICS = {
   endpoint: ANALYTICS_ENDPOINT,
   queue: [],
@@ -2638,6 +2659,11 @@ const ANALYTICS = {
       if(ev.p.severity) agg['crash:' + ev.p.severity] = (agg['crash:' + ev.p.severity] || 0) + 1;
       localStorage.setItem('obr_analytics_agg', JSON.stringify(agg));
     }catch(e){}
+    if(GA_MEASUREMENT_ID && window.gtag){
+      const gp = {};
+      for(const k in ev.p) gp[k] = ev.p[k];
+      window.gtag('event', name, gp);
+    }
     if(this.queue.length >= 8) this.flush();
   },
   flush: function(){
